@@ -1,0 +1,115 @@
+package merkle
+
+import (
+	"context"
+	"fmt"
+	"math/big"
+	"strconv"
+	"submission-sequencer-finalizer/pkgs"
+	"submission-sequencer-finalizer/pkgs/ipfs"
+	"submission-sequencer-finalizer/pkgs/redis"
+	"submission-sequencer-finalizer/pkgs/service"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/sergerad/incremental-merkle-tree/imt"
+	log "github.com/sirupsen/logrus"
+)
+
+// BuildMerkleTree constructs Merkle trees for both submission IDs and finalized CIDs, stores the batch on IPFS, and logs the process.
+func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochID *big.Int, projectIDs, cidList []string) (*ipfs.BatchSubmission, error) {
+	// Create a new Merkle tree for submission IDs
+	submissionIDMerkleTree, err := imt.New()
+	if err != nil {
+		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error creating Merkle tree for submission IDs: %s\n", err.Error()), time.Now().String(), "High")
+		log.Errorf("Error creating Merkle tree for submission IDs: %s\n", err.Error())
+		return nil, err
+	}
+
+	log.Debugln("Building Merkle tree for epoch: ", epochID.String())
+
+	// Efficiently update the Merkle tree with submission IDs
+	if _, err = UpdateMerkleTree(submissionIDs, submissionIDMerkleTree); err != nil {
+		return nil, err
+	}
+
+	// Get the root hash of the submission ID Merkle tree
+	submissionIDRootHash := GetRootHash(submissionIDMerkleTree)
+	log.Debugf("Root hash for batch %d: %x", batchID, submissionIDRootHash)
+
+	// Create a new batch and store it in IPFS
+	batchData := &ipfs.Batch{
+		ID:            big.NewInt(int64(batchID)),
+		SubmissionIds: submissionIDs,
+		Submissions:   submissionData,
+		RootHash:      submissionIDRootHash,
+		Pids:          projectIDs,
+		Cids:          cidList,
+	}
+
+	// Store the batch in IPFS and get the corresponding CID
+	batchCID, err := ipfs.StoreOnIPFS(ipfs.IPFSClient, batchData)
+	if err != nil {
+		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error storing batch %d on IPFS: %s", batchID, err.Error()), time.Now().String(), "High")
+		log.Errorf("Error storing batch %d on IPFS: %s", batchID, err.Error())
+		return nil, err
+	}
+
+	log.Debugf("Stored CID for batch %d: %s", batchID, batchCID)
+
+	// Log the batch processing success
+	processLogEntry := map[string]interface{}{
+		"epoch_id":          epochID.String(),
+		"batch_id":          batchID,
+		"batch_cid":         batchCID,
+		"submissions_count": len(submissionData),
+		"submissions":       submissionData,
+		"timestamp":         time.Now().Unix(),
+	}
+
+	// Store the process log in Redis
+	if err = redis.SetProcessLog(context.Background(), redis.TriggeredProcessLog(pkgs.BuildMerkleTree, strconv.Itoa(batchID)), processLogEntry, 4*time.Hour); err != nil {
+		service.SendFailureNotification("BuildMerkleTree", err.Error(), time.Now().String(), "High")
+		log.Errorln("Error storing BuildMerkleTree process log: ", err.Error())
+	}
+
+	// Create a new Merkle tree for finalized CIDs
+	finalizedCIDMerkleTree, err := imt.New()
+	if err != nil {
+		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error creating Merkle tree for CIDs: %s\n", err.Error()), time.Now().String(), "High")
+		log.Errorf("Error creating Merkle tree for CIDs: %s\n", err.Error())
+		return nil, err
+	}
+
+	// Update the Merkle tree with CIDs
+	if _, err = UpdateMerkleTree(batchData.Cids, finalizedCIDMerkleTree); err != nil {
+		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error updating Merkle tree for batch %d: %s", batchID, err.Error()), time.Now().String(), "High")
+		log.Errorln("Error updating Merkle tree with CIDs: ", err.Error())
+		return nil, err
+	}
+
+	// Return the finalized batch submission with the Merkle tree root hash for CIDs
+	return &ipfs.BatchSubmission{
+		Batch:                 batchData,
+		Cid:                   batchCID,
+		EpochId:               epochID,
+		FinalizedCidsRootHash: finalizedCIDMerkleTree.RootDigest(),
+	}, nil
+}
+
+// GetRootHash returns the hexadecimal root digest of the Merkle tree.
+func GetRootHash(tree *imt.IncrementalMerkleTree) string {
+	return common.Bytes2Hex(tree.RootDigest())
+}
+
+// UpdateMerkleTree adds all provided IDs to the Merkle tree as leaves and returns the updated tree.
+func UpdateMerkleTree(ids []string, tree *imt.IncrementalMerkleTree) (*imt.IncrementalMerkleTree, error) {
+	for _, id := range ids {
+		err := tree.AddLeaf([]byte(id))
+		if err != nil {
+			log.Errorf("Error adding leaf to Merkle tree: %s\n", err.Error())
+			return nil, err
+		}
+	}
+	return tree, nil
+}
