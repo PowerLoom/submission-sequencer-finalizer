@@ -5,19 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"submission-sequencer-finalizer/config"
+	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/ipfs"
+	"submission-sequencer-finalizer/pkgs/merkle"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"submission-sequencer-finalizer/pkgs/service"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type SubmissionDetails struct {
-	epochID    *big.Int
-	batchID    int
-	projectMap map[string][]string // ProjectID -> SubmissionKeys
+	EpochID    *big.Int
+	BatchID    int
+	ProjectMap map[string][]string // ProjectID -> SubmissionKeys
 }
 
 func StartSubmissionFinalizer() {
@@ -45,7 +50,7 @@ func StartSubmissionFinalizer() {
 		}
 
 		// Log the details of the batch being processed
-		log.Printf("Processing batch: %d with epoch ID: %s\n", submissionDetails.batchID, submissionDetails.epochID.String())
+		log.Printf("Processing batch: %d with epoch ID: %s\n", submissionDetails.BatchID, submissionDetails.EpochID.String())
 
 		// Call the method to build and finalize the batch submissions
 		submissionDetails.BuildBatchSubmissions()
@@ -55,212 +60,169 @@ func StartSubmissionFinalizer() {
 // BuildBatchSubmissions organizes project submission keys into batches and finalizes them for processing.
 func (s *SubmissionDetails) BuildBatchSubmissions() ([]*ipfs.BatchSubmission, error) {
 	// Step 1: Organize the projectMap into batches of submission keys
-	batchedSubmissionKeys := arrangeSubmissionKeysInBatches(s.projectMap)
+	batchedSubmissionKeys := arrangeSubmissionKeysInBatches(s.ProjectMap)
 	log.Debugf("Arranged %d batches of submission keys for processing: %v", len(batchedSubmissionKeys), batchedSubmissionKeys)
 
-	// Step 2: Finalize the batch submissions based on the epochID and batched submission keys
-	finalizedBatches, err := finalizeBatches(batchedSubmissionKeys, s.epochID)
+	// Step 2: Finalize the batch submissions based on the EpochID and batched submission keys
+	finalizedBatches, err := s.finalizeBatches(batchedSubmissionKeys)
 	if err != nil {
-		errorMsg := fmt.Sprintf("Error finalizing batches for epoch %s: %v", s.epochID.String(), err)
-		service.SendFailureNotification("BuildBatchSubmissions", errorMsg, time.Now().String(), "High")
+		errorMsg := fmt.Sprintf("Error finalizing batches for epoch %s: %v", s.EpochID.String(), err)
+		service.SendFailureNotification(pkgs.BuildBatchSubmissions, errorMsg, time.Now().String(), "High")
 		log.Errorf("Batch finalization error: %s", errorMsg)
 		return nil, err
 	}
 
 	// Step 3: Log and return the finalized batch submissions
-	log.Debugf("Successfully finalized %d batch submissions for epoch %s", len(finalizedBatches), s.epochID.String())
+	log.Debugf("Successfully finalized %d batch submissions for epoch %s", len(finalizedBatches), s.EpochID.String())
 
 	return finalizedBatches, nil
 }
 
-/*func finalizeBatches(batchedKeys [][]string, epochID *big.Int) ([]*ipfs.BatchSubmission, error) {
-	batchSubmissions := make([]*ipfs.BatchSubmission, 0)
-	var mu sync.Mutex
+func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*ipfs.BatchSubmission, error) {
+	// Slice to store the processed batch submissions
+	finalizedBatchSubmissions := make([]*ipfs.BatchSubmission, 0)
 
-	for _, batch := range batchedKeys {
+	// Channel to collect finalized batch submissions
+	finalizedBatchChan := make(chan *ipfs.BatchSubmission)
+
+	// WaitGroup to wait for all goroutines to finish
+	var wg sync.WaitGroup
+
+	// Iterate over each batch of keys
+	for _, batch := range batches {
 		wg.Add(1)
-
-		go func(batch []string) {
+		go func(batch map[string][]string) {
 			defer wg.Done()
 
 			log.Debugln("Processing batch: ", batch)
+
+			// Initialize slices to store submission IDs and submission data
 			submissionIDs := []string{}
 			submissionData := []string{}
-			localProjectMostFrequent := make(map[string]string)
-			localProjectValueFrequencies := make(map[string]map[string]int)
 
-			for _, key := range batch {
-				val, err := redis.Get(context.Background(), key)
+			// Maps to track the most frequent CIDs for each project and frequency count of submissions
+			projectMostFrequentCID := make(map[string]string)
+			projectCIDFrequencies := make(map[string]map[string]int)
 
-				if err != nil {
-					clients.SendFailureNotification("finalizeBatches", fmt.Sprintf("Error fetching data from redis: %s", err.Error()), time.Now().String(), "High")
-					log.Errorln("Error fetching data from redis: ", err.Error())
-					continue
-				}
-
-				log.Debugln(fmt.Sprintf("Processing key %s and value %s", key, val))
-
-				if len(val) == 0 {
-					clients.SendFailureNotification("finalizeBatches", fmt.Sprintf("Value has expired for key, not being counted in batch: %s", key), time.Now().String(), "High")
-					log.Errorln("Value has expired for key:  ", key)
-					continue
-				}
-
-				parts := strings.Split(key, ".")
-				if len(parts) != 3 {
-					clients.SendFailureNotification("finalizeBatches", fmt.Sprintf("Key should have three parts, invalid key: %s", key), time.Now().String(), "High")
-					log.Errorln("Key should have three parts, invalid key: ", key)
-					continue // skip malformed keys
-				}
-				projectId := parts[1]
-
-				if localProjectValueFrequencies[projectId] == nil {
-					localProjectValueFrequencies[projectId] = make(map[string]int)
-				}
-
-				idSubPair := strings.Split(val, ".")
-				if len(idSubPair) != 2 {
-					clients.SendFailureNotification("finalizeBatches", fmt.Sprintf("Value should have two parts, invalid value: %s", val), time.Now().String(), "High")
-					log.Errorln("Value should have two parts, invalid value: ", val)
-					continue // skip malformed keys
-				}
-
-				subHolder := pkgs.SnapshotSubmission{}
-				err = protojson.Unmarshal([]byte(idSubPair[1]), &subHolder)
-				if err != nil {
-					clients.SendFailureNotification("finalizeBatches", fmt.Sprintf("Unmarshalling %s error: %s", idSubPair[1], err.Error()), time.Now().String(), "High")
-					log.Errorln("Unable to unmarshal submission: ", err)
-					continue
-				}
-
-				value := subHolder.Request.SnapshotCid
-
-				localProjectValueFrequencies[projectId][value] += 1
-
-				if count, exists := localProjectValueFrequencies[projectId][value]; exists {
-					if count > localProjectValueFrequencies[projectId][localProjectMostFrequent[projectId]] {
-						localProjectMostFrequent[projectId] = value
+			// Process each key in the current batch
+			for projectID, submissionKeys := range batch {
+				// Iterate over the submission keys
+				for _, submissionKey := range submissionKeys {
+					// Fetch the value associated with the key from Redis
+					submissionValue, err := redis.Get(context.Background(), submissionKey)
+					if err != nil {
+						log.Errorln("Error fetching data from Redis: ", err.Error())
+						continue
 					}
+
+					log.Debugln(fmt.Sprintf("Processing key %s with value %s", submissionKey, submissionValue))
+
+					// Skip the key if the value has expired or is empty
+					if len(submissionValue) == 0 {
+						log.Errorln("Expired value for key: ", submissionKey)
+						continue
+					}
+
+					// Split the submission value into ID and submission data parts
+					submissionDataParts := strings.Split(submissionValue, ".")
+					if len(submissionDataParts) != 2 {
+						log.Errorln("Invalid value format: ", submissionValue)
+						continue
+					}
+
+					// Parse the submission data using the SnapshotSubmission structure
+					submissionDetails := pkgs.SnapshotSubmission{}
+					err = protojson.Unmarshal([]byte(submissionDataParts[1]), &submissionDetails)
+					if err != nil {
+						log.Errorln("Error unmarshalling submission data: ", err)
+						continue
+					}
+
+					// Retrieve the snapshot CID from the submission data
+					snapshotCID := submissionDetails.Request.SnapshotCid
+
+					// Initialize the frequency map for the project if not already present
+					if projectCIDFrequencies[projectID] == nil {
+						projectCIDFrequencies[projectID] = make(map[string]int)
+					}
+
+					// Increment the frequency of this snapshot CID for the current project
+					projectCIDFrequencies[projectID][snapshotCID] += 1
+
+					// Update the most frequent snapshot CID for the project
+					if projectCIDFrequencies[projectID][snapshotCID] > projectCIDFrequencies[projectID][projectMostFrequentCID[projectID]] {
+						projectMostFrequentCID[projectID] = snapshotCID
+					}
+
+					// Add the submission ID and data to their respective lists
+					submissionIDs = append(submissionIDs, submissionDataParts[0])
+					submissionData = append(submissionData, submissionDataParts[1])
 				}
-
-				submissionIDs = append(submissionIDs, idSubPair[0])
-				submissionData = append(submissionData, idSubPair[1])
 			}
 
-			var keys []string
-			for pid := range localProjectMostFrequent {
-				keys = append(keys, pid)
+			// Prepare the list of project IDs and their corresponding most frequent CIDs
+			projectIDList := []string{}
+			mostFrequentCIDList := []string{}
+			for projectID := range projectMostFrequentCID {
+				projectIDList = append(projectIDList, projectID)
+				mostFrequentCIDList = append(mostFrequentCIDList, projectMostFrequentCID[projectID])
 			}
 
-			pids := []string{}
-			cids := []string{}
-			sort.Strings(keys)
-			for _, pid := range keys {
-				pids = append(pids, pid)
-				cids = append(cids, localProjectMostFrequent[pid])
-			}
+			log.Debugln("Finalizing PIDs and CIDs for epoch: ", s.EpochID, projectIDList, mostFrequentCIDList)
 
-			log.Debugln("PIDs and CIDs for epoch: ", epochID, pids, cids)
-
-			batchSubmission, err := merkle.BuildMerkleTree(submissionIDs, submissionData, BatchId, epochID, pids, cids)
+			// Build the Merkle tree for the current batch and generate the IPFS BatchSubmission
+			batchSubmission, err := merkle.BuildMerkleTree(submissionIDs, submissionData, s.BatchID, s.EpochID, projectIDList, mostFrequentCIDList)
 			if err != nil {
-				clients.SendFailureNotification("finalizeBatches", fmt.Sprintf("Batch building error: %s", err.Error()), time.Now().String(), "High")
-				log.Errorln("Error storing the batch: ", err.Error())
+				log.Errorln("Error building batch: ", err)
 				return
 			}
 
-			mu.Lock()
-			batchSubmissions = append(batchSubmissions, batchSubmission)
-			BatchId++
-			mu.Unlock()
+			// Send the batch submission to the channel
+			finalizedBatchChan <- batchSubmission
 
-			log.Debugf("CID: %s Batch: %d", batchSubmission.Cid, BatchId-1)
+			log.Debugf("CID: %s Batch: %d", batchSubmission.Cid, s.BatchID)
+
+			// Increment the BatchID for the next batch
+			s.BatchID++
 		}(batch)
 	}
 
-	for _, batch := range batchedKeys {
-		log.Debugln("Processing batch: ", batch)
+	// Start a goroutine to wait for all goroutines to finish and then close the channel
+	go func() {
+		wg.Wait()
+		close(finalizedBatchChan)
+	}()
 
-		submissionIDs := []string{}
-		submissionData := []string{}
-		localProjectMostFrequent := make(map[string]string)
-		localProjectValueFrequencies := make(map[string]map[string]int)
-
-		for _, key := range batch {
-			val, err := redis.Get(context.Background(), key)
-			if err != nil {
-				clients.SendFailureNotification(pkgs.FinalizeBatches, fmt.Sprintf("Error fetching data from redis: %s", err.Error()), time.Now().String(), "High")
-				log.Errorln("Error fetching data from redis: ", err.Error())
-				continue
-			}
-
-			log.Debugln(fmt.Sprintf("Processing key %s and value %s", key, val))
-
-			if len(val) == 0 {
-				clients.SendFailureNotification(pkgs.FinalizeBatches, fmt.Sprintf("Value has expired for key, not being counted in batch: %s", key), time.Now().String(), "High")
-				log.Errorln("Value has expired for key: ", key)
-				continue
-			}
-
-		}
+	// Collect results from the channel
+	for batchSubmission := range finalizedBatchChan {
+		finalizedBatchSubmissions = append(finalizedBatchSubmissions, batchSubmission)
 	}
 
-	finalizedBatchIDs := []string{}
-	for _, batchSubmission := range batchSubmissions {
-		finalizedBatchIDs = append(finalizedBatchIDs, batchSubmission.Batch.ID.String())
-	}
+	// Return the finalized batch submissions
+	return finalizedBatchSubmissions, nil
+}
 
-	// Set finalized batches in redis for epochId
-	logEntry := map[string]interface{}{
-		"epoch_id":                epochID.String(),
-		"finalized_batches_count": len(batchSubmissions),
-		"finalized_batch_ids":     finalizedBatchIDs,
-		"timestamp":               time.Now().Unix(),
-	}
-
-	if err := redis.SetProcessLog(context.Background(), redis.TriggeredProcessLog(FinalizeBatches, epochID.String()), logEntry, 4*time.Hour); err != nil {
-		service.SendFailureNotification(FinalizeBatches, err.Error(), time.Now().String(), "High")
-		log.Errorln("finalizeBatches process log error: ", err.Error())
-	}
-
-	return batchSubmissions, nil
-}*/
-
-// arrangeSubmissionKeysInBatches organizes submission keys from the project map into batches
-func arrangeSubmissionKeysInBatches(projectMap map[string][]string) [][]string {
+func arrangeSubmissionKeysInBatches(projectMap map[string][]string) []map[string][]string {
 	var (
-		batches      [][]string                     // Holds the final list of batches
-		batchSize    = config.SettingsObj.BatchSize // Maximum size for each batch
-		currentBatch = make([]string, 0, batchSize)
+		batchSize = config.SettingsObj.BatchSize              // Maximum number of batches
+		batches   = make([]map[string][]string, 0, batchSize) // Preallocate slice with capacity of batchSize
+		count     = 0                                         // Keeps track of the number of batches
 	)
 
 	// Iterate over each project's submission keys
-	for _, submissionKeys := range projectMap {
-		// Determine the total number of keys if we add the current project's keys
-		totalKeys := len(currentBatch) + len(submissionKeys)
-
-		// If the current batch can accommodate all submission keys from this project, add them
-		if totalKeys <= batchSize {
-			currentBatch = append(currentBatch, submissionKeys...)
-		} else {
-			// If the current batch is not empty, add it to batches
-			if len(currentBatch) > 0 {
-				batches = append(batches, currentBatch)
-			}
-
-			currentBatch = submissionKeys
+	for projectID, submissionKeys := range projectMap {
+		if count >= batchSize { // Stop if batchSize is reached
+			break
 		}
 
-		// If the current batch reaches the maximum size, finalize it
-		if len(currentBatch) >= batchSize {
-			batches = append(batches, currentBatch)
-			currentBatch = make([]string, 0, batchSize) // Start a new batch
-		}
-	}
+		// Create a new batch for the current project
+		batch := make(map[string][]string)
+		batch[projectID] = submissionKeys
 
-	// Add the final batch if there are any leftover keys
-	if len(currentBatch) > 0 {
-		batches = append(batches, currentBatch)
+		// Add the batch to the list
+		batches = append(batches, batch)
+
+		count++
 	}
 
 	return batches
