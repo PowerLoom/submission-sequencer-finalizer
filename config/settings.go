@@ -9,22 +9,24 @@ import (
 var SettingsObj *Settings
 
 type Settings struct {
-	RedisHost         string
-	RedisPort         string
-	RedisDB           string
-	IPFSUrl           string
-	SlackReportingUrl string
-	BatchSize         int
-	HttpTimeout       int
+	RedisHost           string
+	RedisPort           string
+	RedisDB             string
+	IPFSUrl             string
+	SlackReportingUrl   string
+	TransactionRelayUrl string
+	BatchSize           int
+	HttpTimeout         int
 }
 
 func LoadConfig() {
 	config := Settings{
-		RedisHost:         getEnv("REDIS_HOST", ""),
-		RedisPort:         getEnv("REDIS_PORT", ""),
-		RedisDB:           getEnv("REDIS_DB", ""),
-		IPFSUrl:           getEnv("IPFS_URL", ""),
-		SlackReportingUrl: getEnv("SLACK_REPORTING_URL", ""),
+		RedisHost:           getEnv("REDIS_HOST", ""),
+		RedisPort:           getEnv("REDIS_PORT", ""),
+		RedisDB:             getEnv("REDIS_DB", ""),
+		IPFSUrl:             getEnv("IPFS_URL", ""),
+		SlackReportingUrl:   getEnv("SLACK_REPORTING_URL", ""),
+		TransactionRelayUrl: getEnv("TRANSACTION_RELAY_URL", ""),
 	}
 
 	batchSize, batchSizeParseErr := strconv.Atoi(getEnv("BATCH_SIZE", ""))

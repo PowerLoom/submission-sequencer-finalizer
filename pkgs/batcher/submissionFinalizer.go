@@ -1,82 +1,24 @@
 package batcher
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"math/big"
+	"net/http"
 	"strings"
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/merkle"
 	"submission-sequencer-finalizer/pkgs/redis"
-	"submission-sequencer-finalizer/pkgs/service"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/encoding/protojson"
 )
-
-type SubmissionDetails struct {
-	EpochID    *big.Int
-	BatchID    int
-	ProjectMap map[string][]string // ProjectID -> SubmissionKeys
-}
-
-func StartSubmissionFinalizer() {
-	log.Println("Submission Finalizer started")
-
-	for {
-		// Fetch submission details from Redis queue
-		result, err := redis.RedisClient.BRPop(context.Background(), 0, "batchQueue").Result()
-		if err != nil {
-			log.Println("Error fetching from Redis queue: ", err)
-			continue
-		}
-
-		if len(result) < 2 {
-			log.Println("Invalid data fetched from Redis queue")
-			continue
-		}
-
-		// Unmarshal the queue data directly into SubmissionDetails
-		var submissionDetails SubmissionDetails
-		err = json.Unmarshal([]byte(result[1]), &submissionDetails)
-		if err != nil {
-			log.Println("Error unmarshalling queue data: ", err)
-			continue
-		}
-
-		// Log the details of the batch being processed
-		log.Printf("Processing batch: %d with epoch ID: %s\n", submissionDetails.BatchID, submissionDetails.EpochID.String())
-
-		// Call the method to build and finalize the batch submissions
-		submissionDetails.BuildBatchSubmissions()
-	}
-}
-
-// BuildBatchSubmissions organizes project submission keys into batches and finalizes them for processing.
-func (s *SubmissionDetails) BuildBatchSubmissions() ([]*ipfs.BatchSubmission, error) {
-	// Step 1: Organize the projectMap into batches of submission keys
-	batchedSubmissionKeys := arrangeSubmissionKeysInBatches(s.ProjectMap)
-	log.Debugf("Arranged %d batches of submission keys for processing: %v", len(batchedSubmissionKeys), batchedSubmissionKeys)
-
-	// Step 2: Finalize the batch submissions based on the EpochID and batched submission keys
-	finalizedBatches, err := s.finalizeBatches(batchedSubmissionKeys)
-	if err != nil {
-		errorMsg := fmt.Sprintf("Error finalizing batches for epoch %s: %v", s.EpochID.String(), err)
-		service.SendFailureNotification(pkgs.BuildBatchSubmissions, errorMsg, time.Now().String(), "High")
-		log.Errorf("Batch finalization error: %s", errorMsg)
-		return nil, err
-	}
-
-	// Step 3: Log and return the finalized batch submissions
-	log.Debugf("Successfully finalized %d batch submissions for epoch %s", len(finalizedBatches), s.EpochID.String())
-
-	return finalizedBatches, nil
-}
 
 func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*ipfs.BatchSubmission, error) {
 	// Slice to store the processed batch submissions
@@ -198,32 +140,64 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 		finalizedBatchSubmissions = append(finalizedBatchSubmissions, batchSubmission)
 	}
 
+	// After finalizing all batches, send them to the external service
+	err := SendBatchSubmissions(finalizedBatchSubmissions)
+	if err != nil {
+		log.Errorln("Error sending batch submissions to relay service: ", err)
+		return nil, err
+	}
+
 	// Return the finalized batch submissions
 	return finalizedBatchSubmissions, nil
 }
 
-func arrangeSubmissionKeysInBatches(projectMap map[string][]string) []map[string][]string {
-	var (
-		batchSize = config.SettingsObj.BatchSize              // Maximum number of batches
-		batches   = make([]map[string][]string, 0, batchSize) // Preallocate slice with capacity of batchSize
-		count     = 0                                         // Keeps track of the number of batches
-	)
-
-	// Iterate over each project's submission keys
-	for projectID, submissionKeys := range projectMap {
-		if count >= batchSize { // Stop if batchSize is reached
-			break
-		}
-
-		// Create a new batch for the current project
-		batch := make(map[string][]string)
-		batch[projectID] = submissionKeys
-
-		// Add the batch to the list
-		batches = append(batches, batch)
-
-		count++
+// SendBatchSubmissions sends all finalized batch submissions to the external transaction relay service.
+func SendBatchSubmissions(batchSubmissions []*ipfs.BatchSubmission) error {
+	client := &http.Client{
+		Timeout: time.Duration(config.SettingsObj.HttpTimeout) * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
 	}
 
-	return batches
+	for _, batch := range batchSubmissions {
+		// Marshal each batch submission to JSON
+		batchJSON, err := json.Marshal(batch)
+		if err != nil {
+			log.Printf("Failed to marshal batch submission for CID %s: %v", batch.Cid, err)
+			continue
+		}
+
+		// Create an HTTP request
+		req, err := http.NewRequest("POST", config.SettingsObj.TransactionRelayUrl, bytes.NewBuffer(batchJSON))
+		if err != nil {
+			log.Printf("Failed to create HTTP request for CID %s: %v", batch.Cid, err)
+			continue
+		}
+
+		// Set the appropriate headers (e.g., Content-Type)
+		req.Header.Set("Content-Type", "application/json")
+
+		// Send the request
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Failed to send batch submission to relay service for CID %s: %v", batch.Cid, err)
+			continue
+		}
+
+		// Ensure that the response body is closed
+		defer resp.Body.Close()
+
+		// Check for a successful response
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Relay service returned an error for CID %s: %s", batch.Cid, resp.Status)
+			continue
+		}
+
+		log.Printf("Successfully sent batch CID: %s to the relay service", batch.Cid)
+	}
+
+	return nil
 }
