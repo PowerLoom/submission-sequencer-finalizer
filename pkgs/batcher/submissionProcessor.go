@@ -7,9 +7,9 @@ import (
 	"math/big"
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs"
+	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/redis"
-	"submission-sequencer-finalizer/pkgs/service"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -66,7 +66,7 @@ func (s *SubmissionDetails) BuildBatchSubmissions() ([]*ipfs.BatchSubmission, er
 	finalizedBatches, err := s.finalizeBatches(batchedSubmissionKeys)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Error finalizing batches for epoch %s: %v", s.EpochID.String(), err)
-		service.SendFailureNotification(pkgs.BuildBatchSubmissions, errorMsg, time.Now().String(), "High")
+		clients.SendFailureNotification(pkgs.BuildBatchSubmissions, errorMsg, time.Now().String(), "High")
 		log.Errorf("Batch finalization error: %s", errorMsg)
 		return nil, err
 	}

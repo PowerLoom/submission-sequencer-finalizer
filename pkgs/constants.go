@@ -3,10 +3,11 @@ package pkgs
 // Process Name Constants
 // process : identifier
 const (
-	FinalizeBatches       = "finalizeBatches"
-	BuildMerkleTree       = "buildMerkleTree"
-	BuildBatchSubmissions = "buildBatchSubmissions"
-	ArrangeKeysInBatches  = "arrangeKeysInBatches"
+	FinalizeBatches         = "FinalizeBatches"
+	BuildMerkleTree         = "BuildMerkleTree"
+	BuildBatchSubmissions   = "BuildBatchSubmissions"
+	ArrangeKeysInBatches    = "ArrangeKeysInBatches"
+	SendSubmissionBatchSize = "SendSubmissionBatchSize"
 )
 
 // General Key Constants

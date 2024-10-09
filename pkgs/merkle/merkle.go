@@ -6,9 +6,9 @@ import (
 	"math/big"
 	"strconv"
 	"submission-sequencer-finalizer/pkgs"
+	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/redis"
-	"submission-sequencer-finalizer/pkgs/service"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -21,7 +21,7 @@ func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochI
 	// Create a new Merkle tree for submission IDs
 	submissionIDMerkleTree, err := imt.New()
 	if err != nil {
-		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error creating Merkle tree for submission IDs: %s\n", err.Error()), time.Now().String(), "High")
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error creating Merkle tree for submission IDs: %s\n", err.Error()), time.Now().String(), "High")
 		log.Errorf("Error creating Merkle tree for submission IDs: %s\n", err.Error())
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochI
 	// Store the batch in IPFS and get the corresponding CID
 	batchCID, err := ipfs.StoreOnIPFS(ipfs.IPFSClient, batchData)
 	if err != nil {
-		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error storing batch %d on IPFS: %s", batchID, err.Error()), time.Now().String(), "High")
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error storing batch %d on IPFS: %s", batchID, err.Error()), time.Now().String(), "High")
 		log.Errorf("Error storing batch %d on IPFS: %s", batchID, err.Error())
 		return nil, err
 	}
@@ -69,21 +69,21 @@ func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochI
 
 	// Store the process log in Redis
 	if err = redis.SetProcessLog(context.Background(), redis.TriggeredProcessLog(pkgs.BuildMerkleTree, strconv.Itoa(batchID)), processLogEntry, 4*time.Hour); err != nil {
-		service.SendFailureNotification("BuildMerkleTree", err.Error(), time.Now().String(), "High")
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, err.Error(), time.Now().String(), "High")
 		log.Errorln("Error storing BuildMerkleTree process log: ", err.Error())
 	}
 
 	// Create a new Merkle tree for finalized CIDs
 	finalizedCIDMerkleTree, err := imt.New()
 	if err != nil {
-		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error creating Merkle tree for CIDs: %s\n", err.Error()), time.Now().String(), "High")
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error creating Merkle tree for CIDs: %s\n", err.Error()), time.Now().String(), "High")
 		log.Errorf("Error creating Merkle tree for CIDs: %s\n", err.Error())
 		return nil, err
 	}
 
 	// Update the Merkle tree with CIDs
 	if _, err = UpdateMerkleTree(batchData.Cids, finalizedCIDMerkleTree); err != nil {
-		service.SendFailureNotification("BuildMerkleTree", fmt.Sprintf("Error updating Merkle tree for batch %d: %s", batchID, err.Error()), time.Now().String(), "High")
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error updating Merkle tree for batch %d: %s", batchID, err.Error()), time.Now().String(), "High")
 		log.Errorln("Error updating Merkle tree with CIDs: ", err.Error())
 		return nil, err
 	}

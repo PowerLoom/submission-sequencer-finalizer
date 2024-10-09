@@ -1,21 +1,19 @@
 package batcher
 
 import (
-	"bytes"
 	"context"
-	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs"
+	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/merkle"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -140,64 +138,37 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 		finalizedBatchSubmissions = append(finalizedBatchSubmissions, batchSubmission)
 	}
 
-	// After finalizing all batches, send them to the external service
-	err := SendBatchSubmissions(finalizedBatchSubmissions)
-	if err != nil {
-		log.Errorln("Error sending batch submissions to relay service: ", err)
-		return nil, err
+	// After finalizing all batches, send them to the external tx relayer service
+	if err := clients.SendSubmissionBatchSize(s.EpochID, len(finalizedBatchSubmissions)); err != nil {
+		errorMsg := fmt.Sprintf("Error sending submission batch size for epoch %s: %v", s.EpochID.String(), err)
+		clients.SendFailureNotification(pkgs.SendSubmissionBatchSize, errorMsg, time.Now().String(), "Medium")
+		log.Errorln(errorMsg)
+	}
+
+	// Submit finalized batch submissions to the external Tx Relayer service
+	for _, submission := range finalizedBatchSubmissions {
+		log.Debugf("Submitting CID: %s, BatchID: %s, EpochID: %s",
+			submission.Cid,
+			submission.Batch.ID.String(),
+			s.EpochID.String(),
+		)
+
+		if err := clients.SubmitSubmissionBatch(
+			config.SettingsObj.DataMarketAddress,
+			submission.Cid,
+			submission.Batch.ID.String(),
+			s.EpochID,
+			submission.Batch.Pids,
+			submission.Batch.Cids,
+			common.Bytes2Hex(submission.FinalizedCidsRootHash),
+		); err != nil {
+			log.Errorf("Batch submission failed for CID %s: %v", submission.Cid, err)
+			continue
+		}
+
+		time.Sleep(time.Duration(config.SettingsObj.BlockTime) * 500 * time.Millisecond)
 	}
 
 	// Return the finalized batch submissions
 	return finalizedBatchSubmissions, nil
-}
-
-// SendBatchSubmissions sends all finalized batch submissions to the external transaction relay service.
-func SendBatchSubmissions(batchSubmissions []*ipfs.BatchSubmission) error {
-	client := &http.Client{
-		Timeout: time.Duration(config.SettingsObj.HttpTimeout) * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
-	for _, batch := range batchSubmissions {
-		// Marshal each batch submission to JSON
-		batchJSON, err := json.Marshal(batch)
-		if err != nil {
-			log.Printf("Failed to marshal batch submission for CID %s: %v", batch.Cid, err)
-			continue
-		}
-
-		// Create an HTTP request
-		req, err := http.NewRequest("POST", config.SettingsObj.TransactionRelayUrl, bytes.NewBuffer(batchJSON))
-		if err != nil {
-			log.Printf("Failed to create HTTP request for CID %s: %v", batch.Cid, err)
-			continue
-		}
-
-		// Set the appropriate headers (e.g., Content-Type)
-		req.Header.Set("Content-Type", "application/json")
-
-		// Send the request
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("Failed to send batch submission to relay service for CID %s: %v", batch.Cid, err)
-			continue
-		}
-
-		// Ensure that the response body is closed
-		defer resp.Body.Close()
-
-		// Check for a successful response
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("Relay service returned an error for CID %s: %s", batch.Cid, resp.Status)
-			continue
-		}
-
-		log.Printf("Successfully sent batch CID: %s to the relay service", batch.Cid)
-	}
-
-	return nil
 }

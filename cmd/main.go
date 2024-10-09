@@ -3,8 +3,8 @@ package main
 import (
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs/batcher"
+	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/redis"
-	"submission-sequencer-finalizer/pkgs/service"
 	"submission-sequencer-finalizer/pkgs/utils"
 	"sync"
 	"time"
@@ -18,7 +18,10 @@ func main() {
 	config.LoadConfig()
 
 	// Initialize reporting service
-	service.InitializeReportingClient(config.SettingsObj.SlackReportingUrl, 5*time.Second)
+	clients.InitializeReportingClient(config.SettingsObj.SlackReportingUrl, 5*time.Second)
+
+	// Initialize tx relayer service
+	clients.InitializeTxClient(config.SettingsObj.TxRelayerUrl, time.Duration(config.SettingsObj.HttpTimeout)*time.Second)
 
 	// Setup redis
 	redis.RedisClient = redis.NewRedisClient()
@@ -26,6 +29,6 @@ func main() {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	go batcher.StartSubmissionFinalizer() // Start the submission finalizer
+	go batcher.StartSubmissionProcessor() // Start the submission processor
 	wg.Wait()
 }
