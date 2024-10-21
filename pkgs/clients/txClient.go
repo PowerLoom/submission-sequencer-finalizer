@@ -25,7 +25,6 @@ type SubmissionBatchSizeRequest struct {
 type SubmitSubmissionBatchRequest struct {
 	DataMarketAddress     string   `json:"dataMarket"`
 	BatchCID              string   `json:"batchCID"`
-	BatchID               string   `json:"batchID"`
 	EpochID               *big.Int `json:"epochID"`
 	ProjectIDs            []string `json:"projectIDs"`
 	SnapshotCIDs          []string `json:"snapshotCIDs"`
@@ -49,9 +48,9 @@ func InitializeTxClient(url string, timeout time.Duration) {
 }
 
 // SendSubmissionBatchSize sends the size of the submission batch for a given epoch
-func SendSubmissionBatchSize(epochId *big.Int, size int) error {
+func SendSubmissionBatchSize(epochID *big.Int, size int) error {
 	request := SubmissionBatchSizeRequest{
-		EpochID:   epochId,
+		EpochID:   epochID,
 		Size:      size,
 		AuthToken: config.SettingsObj.TxRelayerAuthWriteToken,
 	}
@@ -81,7 +80,6 @@ func SubmitSubmissionBatch(dataMarketAddress, batchCID, batchID string, epochID 
 	request := SubmitSubmissionBatchRequest{
 		DataMarketAddress:     dataMarketAddress,
 		BatchCID:              batchCID,
-		BatchID:               batchID,
 		EpochID:               epochID,
 		ProjectIDs:            projectIDs,
 		SnapshotCIDs:          snapshotCIDs,
