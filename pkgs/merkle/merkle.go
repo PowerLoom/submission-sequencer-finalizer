@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"strconv"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
@@ -17,12 +16,12 @@ import (
 )
 
 // BuildMerkleTree constructs Merkle trees for both submission IDs and finalized CIDs, stores the batch on IPFS, and logs the process.
-func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochID *big.Int, projectIDs, cidList []string) (*ipfs.BatchSubmission, error) {
+func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, projectIDs, CIDs []string) (*ipfs.BatchSubmission, error) {
 	// Create a new Merkle tree for submission IDs
 	submissionIDMerkleTree, err := imt.New()
 	if err != nil {
 		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error creating Merkle tree for submission IDs: %s\n", err.Error()), time.Now().String(), "High")
-		log.Errorf("Error creating Merkle tree for submission IDs: %s\n", err.Error())
+		log.Errorf("Error creating Merkle tree for submission IDs: %s", err.Error())
 		return nil, err
 	}
 
@@ -35,32 +34,30 @@ func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochI
 
 	// Get the root hash of the submission ID Merkle tree
 	submissionIDRootHash := GetRootHash(submissionIDMerkleTree)
-	log.Debugf("Root hash for batch %d: %x", batchID, submissionIDRootHash)
+	log.Debugf("Root hash for batch in epoch %s: %s", epochID.String(), submissionIDRootHash)
 
 	// Create a new batch and store it in IPFS
 	batchData := &ipfs.Batch{
-		ID:            big.NewInt(int64(batchID)),
 		SubmissionIds: submissionIDs,
 		Submissions:   submissionData,
 		RootHash:      submissionIDRootHash,
 		Pids:          projectIDs,
-		Cids:          cidList,
+		Cids:          CIDs,
 	}
 
 	// Store the batch in IPFS and get the corresponding CID
 	batchCID, err := ipfs.StoreOnIPFS(ipfs.IPFSClient, batchData)
 	if err != nil {
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error storing batch %d on IPFS: %s", batchID, err.Error()), time.Now().String(), "High")
-		log.Errorf("Error storing batch %d on IPFS: %s", batchID, err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error storing batch on IPFS: %s", err.Error()), time.Now().String(), "High")
+		log.Errorf("Error storing batch on IPFS: %s", err.Error())
 		return nil, err
 	}
 
-	log.Debugf("Stored CID for batch %d: %s", batchID, batchCID)
+	log.Debugf("Stored CID for batch: %s", batchCID)
 
 	// Log the batch processing success
 	processLogEntry := map[string]interface{}{
 		"epoch_id":          epochID.String(),
-		"batch_id":          batchID,
 		"batch_cid":         batchCID,
 		"submissions_count": len(submissionData),
 		"submissions":       submissionData,
@@ -68,7 +65,7 @@ func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochI
 	}
 
 	// Store the process log in Redis
-	if err = redis.SetProcessLog(context.Background(), redis.TriggeredProcessLog(pkgs.BuildMerkleTree, strconv.Itoa(batchID)), processLogEntry, 4*time.Hour); err != nil {
+	if err = redis.SetProcessLog(context.Background(), redis.TriggeredProcessLog(pkgs.BuildMerkleTree, submissionIDRootHash), processLogEntry, 4*time.Hour); err != nil {
 		clients.SendFailureNotification(pkgs.BuildMerkleTree, err.Error(), time.Now().String(), "High")
 		log.Errorln("Error storing BuildMerkleTree process log: ", err.Error())
 	}
@@ -83,8 +80,8 @@ func BuildMerkleTree(submissionIDs, submissionData []string, batchID int, epochI
 
 	// Update the Merkle tree with CIDs
 	if _, err = UpdateMerkleTree(batchData.Cids, finalizedCIDMerkleTree); err != nil {
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error updating Merkle tree for batch %d: %s", batchID, err.Error()), time.Now().String(), "High")
-		log.Errorln("Error updating Merkle tree with CIDs: ", err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error updating Merkle tree for batch with roothash %s: %s", submissionIDRootHash, err.Error()), time.Now().String(), "High")
+		log.Errorln("Unable to get finalized root hash: ", err.Error())
 		return nil, err
 	}
 
