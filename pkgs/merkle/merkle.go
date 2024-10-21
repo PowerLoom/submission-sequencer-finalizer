@@ -38,11 +38,11 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 
 	// Create a new batch and store it in IPFS
 	batchData := &ipfs.Batch{
-		SubmissionIds: submissionIDs,
+		SubmissionIDs: submissionIDs,
 		Submissions:   submissionData,
 		RootHash:      submissionIDRootHash,
-		Pids:          projectIDs,
-		Cids:          CIDs,
+		PIDs:          projectIDs,
+		CIDs:          CIDs,
 	}
 
 	// Store the batch in IPFS and get the corresponding CID
@@ -79,7 +79,7 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 	}
 
 	// Update the Merkle tree with CIDs
-	if _, err = UpdateMerkleTree(batchData.Cids, finalizedCIDMerkleTree); err != nil {
+	if _, err = UpdateMerkleTree(batchData.CIDs, finalizedCIDMerkleTree); err != nil {
 		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error updating Merkle tree for batch with roothash %s: %s", submissionIDRootHash, err.Error()), time.Now().String(), "High")
 		log.Errorln("Unable to get finalized root hash: ", err.Error())
 		return nil, err
@@ -88,9 +88,9 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 	// Return the finalized batch submission with the Merkle tree root hash for CIDs
 	return &ipfs.BatchSubmission{
 		Batch:                 batchData,
-		Cid:                   batchCID,
-		EpochId:               epochID,
-		FinalizedCidsRootHash: finalizedCIDMerkleTree.RootDigest(),
+		CID:                   batchCID,
+		EpochID:               epochID,
+		FinalizedCIDsRootHash: finalizedCIDMerkleTree.RootDigest(),
 	}, nil
 }
 
