@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"strconv"
@@ -16,13 +17,24 @@ type Settings struct {
 	TxRelayerUrl            string
 	SlackReportingUrl       string
 	TxRelayerAuthWriteToken string
-	DataMarketAddress       string
+	DataMarketAddresses     []string
 	BatchSize               int
 	BlockTime               int
 	HttpTimeout             int
 }
 
 func LoadConfig() {
+	dataMarketAddresses := getEnv("DATA_MARKET_ADDRESSES", "[]")
+	dataMarketAddressesList := []string{}
+
+	err := json.Unmarshal([]byte(dataMarketAddresses), &dataMarketAddressesList)
+	if err != nil {
+		log.Fatalf("Failed to parse DATA_MARKET_ADDRESSES environment variable: %v", err)
+	}
+	if len(dataMarketAddressesList) == 0 {
+		log.Fatalf("DATA_MARKET_ADDRESSES environment variable has an empty array")
+	}
+
 	config := Settings{
 		RedisHost:               getEnv("REDIS_HOST", ""),
 		RedisPort:               getEnv("REDIS_PORT", ""),
@@ -31,7 +43,7 @@ func LoadConfig() {
 		TxRelayerUrl:            getEnv("TX_RELAYER_URL", ""),
 		SlackReportingUrl:       getEnv("SLACK_REPORTING_URL", ""),
 		TxRelayerAuthWriteToken: getEnv("TX_RELAYER_AUTH_WRITE_TOKEN", ""),
-		DataMarketAddress:       getEnv("DATA_MARKET_CONTRACT", ""),
+		DataMarketAddresses:     dataMarketAddressesList,
 	}
 
 	batchSize, batchSizeParseErr := strconv.Atoi(getEnv("BATCH_SIZE", ""))
