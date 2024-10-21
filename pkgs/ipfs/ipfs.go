@@ -19,19 +19,18 @@ var IPFSClient *shell.Shell
 
 // Batch represents your data structure
 type Batch struct {
-	ID            *big.Int `json:"id"`
-	SubmissionIds []string `json:"submissionIds"`
+	SubmissionIDs []string `json:"submissionIDs"`
 	Submissions   []string `json:"submissions"`
 	RootHash      string   `json:"roothash"`
-	Pids          []string `json:"pids"`
-	Cids          []string `json:"cids"`
+	PIDs          []string `json:"pids"`
+	CIDs          []string `json:"cids"`
 }
 
 type BatchSubmission struct {
 	Batch                 *Batch
-	Cid                   string
-	EpochId               *big.Int
-	FinalizedCidsRootHash []byte
+	CID                   string
+	EpochID               *big.Int
+	FinalizedCIDsRootHash []byte
 }
 
 // ConnectIPFSNode connects to the IPFS node using the provided configuration
@@ -43,7 +42,7 @@ func ConnectIPFSNode() {
 		&http.Client{
 			Timeout: time.Duration(config.SettingsObj.HttpTimeout) * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, // Insecure, used for testing or non-production environments
+				TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 				MaxIdleConns:      10,
 				IdleConnTimeout:   5 * time.Second,
 				DisableKeepAlives: true,
