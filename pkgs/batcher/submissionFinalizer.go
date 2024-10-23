@@ -22,11 +22,11 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 	// Slice to store the processed batch submissions
 	finalizedBatchSubmissions := make([]*ipfs.BatchSubmission, 0)
 
-	// Channel to collect finalized batch submissions
-	finalizedBatchChan := make(chan *ipfs.BatchSubmission)
-
 	// WaitGroup to wait for all goroutines to finish
 	var wg sync.WaitGroup
+
+	// Mutex to protect shared resources and ensure safe concurrent access
+	var mu sync.Mutex
 
 	// Iterate over each batch of keys
 	for _, batch := range batches {
@@ -55,7 +55,7 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 						continue
 					}
 
-					log.Debugln(fmt.Sprintf("Processing key %s with value %s", submissionKey, submissionValue))
+					log.Debugf("Processing key %s with value %s", submissionKey, submissionValue)
 
 					// Skip the key if the value has expired or is empty
 					if len(submissionValue) == 0 {
@@ -111,32 +111,22 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 			log.Debugln("Finalizing PIDs and CIDs for epoch: ", s.EpochID, projectIDList, mostFrequentCIDList)
 
 			// Build the Merkle tree for the current batch and generate the IPFS BatchSubmission
-			batchSubmission, err := merkle.BuildMerkleTree(submissionIDs, submissionData, s.BatchID, s.EpochID, projectIDList, mostFrequentCIDList)
+			batchSubmission, err := merkle.BuildMerkleTree(submissionIDs, submissionData, s.EpochID, projectIDList, mostFrequentCIDList)
 			if err != nil {
 				log.Errorln("Error building batch: ", err)
 				return
 			}
 
-			// Send the batch submission to the channel
-			finalizedBatchChan <- batchSubmission
+			mu.Lock()
+			finalizedBatchSubmissions = append(finalizedBatchSubmissions, batchSubmission)
+			mu.Unlock()
 
-			log.Debugf("CID: %s Batch: %d", batchSubmission.Cid, s.BatchID)
-
-			// Increment the BatchID for the next batch
-			s.BatchID++
+			log.Debugf("CID: %s EpochID: %s", batchSubmission.CID, s.EpochID.String())
 		}(batch)
 	}
 
-	// Start a goroutine to wait for all goroutines to finish and then close the channel
-	go func() {
-		wg.Wait()
-		close(finalizedBatchChan)
-	}()
-
-	// Collect results from the channel
-	for batchSubmission := range finalizedBatchChan {
-		finalizedBatchSubmissions = append(finalizedBatchSubmissions, batchSubmission)
-	}
+	// Wait for all goroutines to finish
+	wg.Wait()
 
 	// After finalizing all batches, send them to the external tx relayer service
 	if err := clients.SendSubmissionBatchSize(s.EpochID, len(finalizedBatchSubmissions)); err != nil {
@@ -147,22 +137,17 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 
 	// Submit finalized batch submissions to the external Tx Relayer service
 	for _, submission := range finalizedBatchSubmissions {
-		log.Debugf("Submitting CID: %s, BatchID: %s, EpochID: %s",
-			submission.Cid,
-			submission.Batch.ID.String(),
-			s.EpochID.String(),
-		)
+		log.Debugf("Submitting CID %s for EpochID: %s", submission.CID, s.EpochID.String())
 
 		if err := clients.SubmitSubmissionBatch(
-			config.SettingsObj.DataMarketAddress,
-			submission.Cid,
-			submission.Batch.ID.String(),
+			s.DataMarketAddress,
+			submission.CID,
 			s.EpochID,
-			submission.Batch.Pids,
-			submission.Batch.Cids,
-			common.Bytes2Hex(submission.FinalizedCidsRootHash),
+			submission.Batch.PIDs,
+			submission.Batch.CIDs,
+			common.Bytes2Hex(submission.FinalizedCIDsRootHash),
 		); err != nil {
-			log.Errorf("Batch submission failed for CID %s: %v", submission.Cid, err)
+			log.Errorf("Batch submission failed for CID %s: %v", submission.CID, err)
 			continue
 		}
 

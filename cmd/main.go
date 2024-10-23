@@ -4,6 +4,7 @@ import (
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs/batcher"
 	"submission-sequencer-finalizer/pkgs/clients"
+	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"submission-sequencer-finalizer/pkgs/utils"
 	"sync"
@@ -25,6 +26,9 @@ func main() {
 
 	// Setup redis
 	redis.RedisClient = redis.NewRedisClient()
+
+	// Connect to IPFS node
+	ipfs.ConnectIPFSNode()
 
 	var wg sync.WaitGroup
 

@@ -48,10 +48,10 @@ func InitializeTxClient(url string, timeout time.Duration) {
 }
 
 // SendSubmissionBatchSize sends the size of the submission batch for a given epoch
-func SendSubmissionBatchSize(epochID *big.Int, size int) error {
+func SendSubmissionBatchSize(epochID *big.Int, batchSize int) error {
 	request := SubmissionBatchSizeRequest{
 		EpochID:   epochID,
-		Size:      size,
+		Size:      batchSize,
 		AuthToken: config.SettingsObj.TxRelayerAuthWriteToken,
 	}
 
@@ -76,7 +76,7 @@ func SendSubmissionBatchSize(epochID *big.Int, size int) error {
 }
 
 // SubmitSubmissionBatch submits a batch of submissions for a given epoch
-func SubmitSubmissionBatch(dataMarketAddress, batchCID, batchID string, epochID *big.Int, projectIDs, snapshotCIDs []string, finalizedCIDsRootHash string) error {
+func SubmitSubmissionBatch(dataMarketAddress, batchCID string, epochID *big.Int, projectIDs, snapshotCIDs []string, finalizedCIDsRootHash string) error {
 	request := SubmitSubmissionBatchRequest{
 		DataMarketAddress:     dataMarketAddress,
 		BatchCID:              batchCID,

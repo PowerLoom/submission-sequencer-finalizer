@@ -16,9 +16,9 @@ import (
 )
 
 type SubmissionDetails struct {
-	EpochID    *big.Int
-	BatchID    int
-	ProjectMap map[string][]string // ProjectID -> SubmissionKeys
+	DataMarketAddress string
+	EpochID           *big.Int
+	ProjectMap        map[string][]string // ProjectID -> SubmissionKeys
 }
 
 func StartSubmissionProcessor() {
@@ -26,7 +26,7 @@ func StartSubmissionProcessor() {
 
 	for {
 		// Fetch submission details from Redis queue
-		result, err := redis.RedisClient.BRPop(context.Background(), 0, "batchQueue").Result()
+		result, err := redis.RedisClient.BRPop(context.Background(), 0, "finalizerQueue").Result()
 		if err != nil {
 			log.Println("Error fetching from Redis queue: ", err)
 			continue
@@ -45,12 +45,12 @@ func StartSubmissionProcessor() {
 			continue
 		}
 
-		// Log the details of the batch being processed
-		log.Printf("Processing batch: %d with epoch ID: %s\n", submissionDetails.BatchID, submissionDetails.EpochID.String())
+		// Log the details of the epoch being processed for the specified data market
+		log.Printf("Processing epoch ID %s for data market: %s", submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress)
 
 		// Call the method to build and finalize the batch submissions
 		if _, err := submissionDetails.BuildBatchSubmissions(); err != nil {
-			log.Printf("Error building batch submissions for batch %d: %v\n", submissionDetails.BatchID, err)
+			log.Printf("Error building batch submissions for epoch ID %s in data market %s: %v", submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress, err)
 			continue
 		}
 	}
