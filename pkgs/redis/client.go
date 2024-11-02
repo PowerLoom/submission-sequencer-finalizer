@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"strconv"
 	"submission-sequencer-finalizer/config"
 	"time"
@@ -56,16 +57,6 @@ func Expire(ctx context.Context, key string, expiration time.Duration) error {
 	return RedisClient.Expire(ctx, key, expiration).Err()
 }
 
-func SetSubmission(ctx context.Context, key string, value string, set string, expiration time.Duration) error {
-	if err := RedisClient.SAdd(ctx, set, key).Err(); err != nil {
-		return err
-	}
-	if err := RedisClient.Set(ctx, key, value, expiration).Err(); err != nil {
-		return err
-	}
-	return nil
-}
-
 func Get(ctx context.Context, key string) (string, error) {
 	val, err := RedisClient.Get(ctx, key).Result()
 	if err != nil {
@@ -78,7 +69,12 @@ func Get(ctx context.Context, key string) (string, error) {
 	return val, nil
 }
 
-func Set(ctx context.Context, key, value string, expiration time.Duration) error {
+func Set(ctx context.Context, key, value string) error {
+	return RedisClient.Set(ctx, key, value, 0).Err()
+}
+
+// Use this when you want to set an expiration
+func SetWithExpiration(ctx context.Context, key, value string, expiration time.Duration) error {
 	return RedisClient.Set(ctx, key, value, expiration).Err()
 }
 
@@ -87,6 +83,15 @@ func Incr(ctx context.Context, key string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	return result, nil
+}
+
+func IncrBy(ctx context.Context, key string, size int64) (int64, error) {
+	result, err := RedisClient.IncrBy(ctx, key, size).Result()
+	if err != nil {
+		return 0, err
+	}
+
 	return result, nil
 }
 
@@ -102,4 +107,20 @@ func SetProcessLog(ctx context.Context, key string, logEntry map[string]interfac
 	}
 
 	return nil
+}
+
+func GetDaySize(ctx context.Context, dataMarketAddress string) (*big.Int, error) {
+	// Fetch DAY_SIZE for the given data market address from Redis
+	daySizeStr, err := RedisClient.HGet(context.Background(), GetDaySizeTableKey(), dataMarketAddress).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch day size for data market address %s: %s", dataMarketAddress, err)
+	}
+
+	// Convert the day size from string to *big.Int
+	daySize, ok := new(big.Int).SetString(daySizeStr, 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid day size value for data market address %s: %s", dataMarketAddress, daySizeStr)
+	}
+
+	return daySize, nil
 }

@@ -1,28 +1,48 @@
 package config
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"strconv"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 var SettingsObj *Settings
 
 type Settings struct {
-	RedisHost               string
-	RedisPort               string
-	RedisDB                 string
-	IPFSUrl                 string
-	TxRelayerUrl            string
-	SlackReportingUrl       string
-	TxRelayerAuthWriteToken string
-	BatchSize               int
-	BlockTime               int
-	HttpTimeout             int
+	ClientUrl                   string
+	ContractAddress             string
+	RedisHost                   string
+	RedisPort                   string
+	RedisDB                     string
+	IPFSUrl                     string
+	TxRelayerUrl                string
+	SlackReportingUrl           string
+	TxRelayerAuthWriteToken     string
+	BatchSize                   int
+	BlockTime                   int
+	HttpTimeout                 int
+	DataMarketAddresses         []string
+	DataMarketContractAddresses []common.Address
 }
 
 func LoadConfig() {
+	dataMarketAddresses := getEnv("DATA_MARKET_ADDRESSES", "[]")
+	dataMarketAddressesList := []string{}
+
+	err := json.Unmarshal([]byte(dataMarketAddresses), &dataMarketAddressesList)
+	if err != nil {
+		log.Fatalf("Failed to parse DATA_MARKET_ADDRESSES environment variable: %v", err)
+	}
+	if len(dataMarketAddressesList) == 0 {
+		log.Fatalf("DATA_MARKET_ADDRESSES environment variable has an empty array")
+	}
+
 	config := Settings{
+		ClientUrl:               getEnv("PROST_RPC_URL", ""),
+		ContractAddress:         getEnv("PROTOCOL_STATE_CONTRACT", ""),
 		RedisHost:               getEnv("REDIS_HOST", ""),
 		RedisPort:               getEnv("REDIS_PORT", ""),
 		RedisDB:                 getEnv("REDIS_DB", ""),
@@ -30,6 +50,11 @@ func LoadConfig() {
 		TxRelayerUrl:            getEnv("TX_RELAYER_URL", ""),
 		SlackReportingUrl:       getEnv("SLACK_REPORTING_URL", ""),
 		TxRelayerAuthWriteToken: getEnv("TX_RELAYER_AUTH_WRITE_TOKEN", ""),
+		DataMarketAddresses:     dataMarketAddressesList,
+	}
+
+	for _, addr := range config.DataMarketAddresses {
+		config.DataMarketContractAddresses = append(config.DataMarketContractAddresses, common.HexToAddress(addr))
 	}
 
 	batchSize, batchSizeParseErr := strconv.Atoi(getEnv("BATCH_SIZE", ""))

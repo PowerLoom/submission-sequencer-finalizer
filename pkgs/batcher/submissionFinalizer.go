@@ -9,6 +9,7 @@ import (
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/merkle"
+	"submission-sequencer-finalizer/pkgs/prost"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"sync"
 	"time"
@@ -43,6 +44,9 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 			// Maps to track the most frequent CIDs for each project and frequency count of submissions
 			projectMostFrequentCID := make(map[string]string)
 			projectCIDFrequencies := make(map[string]map[string]int)
+
+			// Map to store snapshotter identity (key) and snapshot CID for each submission
+			submissionSnapshotCIDMap := make(map[string]string)
 
 			// Process each key in the current batch
 			for projectID, submissionKeys := range batch {
@@ -81,6 +85,9 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 					// Retrieve the snapshot CID from the submission data
 					snapshotCID := submissionDetails.Request.SnapshotCid
 
+					// Store the snapshot CID for this submission key
+					submissionSnapshotCIDMap[submissionKey] = snapshotCID
+
 					// Initialize the frequency map for the project if not already present
 					if projectCIDFrequencies[projectID] == nil {
 						projectCIDFrequencies[projectID] = make(map[string]int)
@@ -98,6 +105,12 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 					submissionIDs = append(submissionIDs, submissionDataParts[0])
 					submissionData = append(submissionData, submissionDataParts[1])
 				}
+			}
+
+			// Update eligible submission counts for each snapshotter identity in the batch based on the most frequent snapshot CID
+			if err := s.UpdateEligibleSubmissionCounts(batch, projectMostFrequentCID, submissionSnapshotCIDMap); err != nil {
+				log.Errorf("Error updating eligible submission counts for data market address %s: %v", s.DataMarketAddress, err)
+				return
 			}
 
 			// Prepare the list of project IDs and their corresponding most frequent CIDs
@@ -156,4 +169,55 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 
 	// Return the finalized batch submissions
 	return finalizedBatchSubmissions, nil
+}
+
+func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]string, projectMostFrequentCID, submissionSnapshotCIDMap map[string]string) error {
+	dataMarketAddress := s.DataMarketAddress
+	eligibleSubmissionCounts := make(map[string]int)
+
+	// Process each key in the current batch
+	for projectID, submissionKeys := range batch {
+		mostFrequentCID, found := projectMostFrequentCID[projectID]
+		if !found {
+			log.Errorf("No most frequent CID found for project %s", projectID)
+			continue
+		}
+
+		// Iterate over the submission keys
+		for _, submissionKey := range submissionKeys {
+			// Fetch the snapshotCID for the given submission key
+			snapshotCID, exists := submissionSnapshotCIDMap[submissionKey]
+			if !exists {
+				log.Errorln("Snapshot CID not found for key: ", submissionKey)
+				continue
+			}
+
+			// Check if the snapshot CID matches the most frequent CID
+			if snapshotCID == mostFrequentCID {
+				eligibleSubmissionCounts[submissionKey] += 1
+			}
+		}
+	}
+
+	// Fetch the current day
+	currentDay, err := prost.FetchCurrentDay(common.HexToAddress(dataMarketAddress), s.EpochID.Int64())
+	if err != nil {
+		log.Errorf("Failed to fetch current day for data market address %s: %v", dataMarketAddress, err)
+		return err
+	}
+
+	// Update eligible submission counts in Redis for each snapshotter identity
+	for submissionKey, submissionCount := range eligibleSubmissionCounts {
+		// Set the eligible submission count in Redis
+		key := redis.GetEligibleSubmissionCountsKey(currentDay.String(), s.DataMarketAddress, submissionKey)
+		updatedCount, err := redis.IncrBy(context.Background(), key, int64(submissionCount))
+		if err != nil {
+			log.Errorf("Failed to update eligible submission count for snapshotter %s in data market address %s: %v", submissionKey, dataMarketAddress, err)
+			return err
+		}
+
+		log.Debugf("Eligible submission count for snapshotter %s in data market address %s: %d", submissionKey, dataMarketAddress, updatedCount)
+	}
+
+	return nil
 }
