@@ -5,6 +5,7 @@ import (
 	"submission-sequencer-finalizer/pkgs/batcher"
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
+	"submission-sequencer-finalizer/pkgs/prost"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"submission-sequencer-finalizer/pkgs/utils"
 	"sync"
@@ -29,6 +30,13 @@ func main() {
 
 	// Connect to IPFS node
 	ipfs.ConnectIPFSNode()
+
+	// Set up RPC client and contract instance
+	prost.ConfigureClient()
+	prost.ConfigureContractInstance()
+
+	// Load the state variables from the protocol state contract
+	prost.LoadContractStateVariables()
 
 	var wg sync.WaitGroup
 
