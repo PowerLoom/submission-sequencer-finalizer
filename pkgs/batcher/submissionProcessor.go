@@ -48,6 +48,11 @@ func StartSubmissionProcessor() {
 		// Log the details of the epoch being processed for the specified data market
 		log.Printf("Processing epoch ID %s for data market: %s", submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress)
 
+		if !config.SettingsObj.ProcessSwitch {
+			log.Println("Process switch is off, skipping processing")
+			continue
+		}
+
 		// Call the method to build and finalize the batch submissions
 		if _, err := submissionDetails.BuildBatchSubmissions(); err != nil {
 			log.Printf("Error building batch submissions for epoch ID %s in data market %s: %v", submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress, err)

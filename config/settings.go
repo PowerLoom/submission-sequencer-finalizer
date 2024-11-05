@@ -26,6 +26,7 @@ type Settings struct {
 	HttpTimeout                 int
 	DataMarketAddresses         []string
 	DataMarketContractAddresses []common.Address
+	ProcessSwitch               bool
 }
 
 func LoadConfig() {
@@ -40,6 +41,11 @@ func LoadConfig() {
 		log.Fatalf("DATA_MARKET_ADDRESSES environment variable has an empty array")
 	}
 
+	processSwitch, processSwitchParseErr := strconv.ParseBool(getEnv("PROCESS_SWITCH", "true"))
+	if processSwitchParseErr != nil {
+		log.Fatalf("Failed to parse PROCESS_SWITCH environment variable: %v", processSwitchParseErr)
+	}
+
 	config := Settings{
 		ClientUrl:               getEnv("PROST_RPC_URL", ""),
 		ContractAddress:         getEnv("PROTOCOL_STATE_CONTRACT", ""),
@@ -51,6 +57,7 @@ func LoadConfig() {
 		SlackReportingUrl:       getEnv("SLACK_REPORTING_URL", ""),
 		TxRelayerAuthWriteToken: getEnv("TX_RELAYER_AUTH_WRITE_TOKEN", ""),
 		DataMarketAddresses:     dataMarketAddressesList,
+		ProcessSwitch:           processSwitch,
 	}
 
 	for _, addr := range config.DataMarketAddresses {
