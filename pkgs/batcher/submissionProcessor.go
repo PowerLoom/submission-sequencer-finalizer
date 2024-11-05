@@ -8,7 +8,6 @@ import (
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
-	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"time"
 
@@ -18,7 +17,7 @@ import (
 type SubmissionDetails struct {
 	DataMarketAddress string
 	EpochID           *big.Int
-	ProjectMap        map[string][]string // ProjectID -> SubmissionKeys
+	Batch             map[string][]string // ProjectID -> SubmissionKeys
 }
 
 func StartSubmissionProcessor() {
@@ -45,66 +44,24 @@ func StartSubmissionProcessor() {
 			continue
 		}
 
-		// Log the details of the epoch being processed for the specified data market
-		log.Printf("Processing epoch ID %s for data market: %s", submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress)
+		// Log the details of the batch being processed for the given epochID in the specified data market
+		log.Printf("🔄 Processing batch %v of epoch ID %s for data market: %s", submissionDetails.Batch, submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress)
 
 		if !config.SettingsObj.ProcessSwitch {
 			log.Println("Process switch is off, skipping processing")
 			continue
 		}
 
-		// Call the method to build and finalize the batch submissions
-		if _, err := submissionDetails.BuildBatchSubmissions(); err != nil {
-			log.Printf("Error building batch submissions for epoch ID %s in data market %s: %v", submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress, err)
+		// Call the method to finalize the batch submission
+		finalizedBatchSubmission, err := submissionDetails.FinalizeBatch()
+		if err != nil {
+			errorMsg := fmt.Sprintf("Error finalizing batch %v of epochID %s for data market address %s: %v", submissionDetails.Batch, submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress, err)
+			clients.SendFailureNotification(pkgs.FinalizeBatches, errorMsg, time.Now().String(), "High")
+			log.Errorf("Batch finalization error: %s", errorMsg)
 			continue
 		}
+
+		// Log the finalized batch submission
+		log.Debugf("✅ Finalized batch submission for epochID %s in data market address %s: %v", submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress, finalizedBatchSubmission)
 	}
-}
-
-// BuildBatchSubmissions organizes project submission keys into batches and finalizes them for processing.
-func (s *SubmissionDetails) BuildBatchSubmissions() ([]*ipfs.BatchSubmission, error) {
-	log.Debugf("Building batch submissions for epoch %s in data market %s: %v", s.EpochID.String(), s.DataMarketAddress, s.ProjectMap)
-	// Step 1: Organize the projectMap into batches of submission keys
-	batchedSubmissionKeys := arrangeSubmissionKeysInBatches(s.ProjectMap)
-	log.Debugf("Arranged %d batches of submission keys for processing: %v", len(batchedSubmissionKeys), batchedSubmissionKeys)
-
-	// Step 2: Finalize the batch submissions based on the EpochID and batched submission keys
-	finalizedBatches, err := s.finalizeBatches(batchedSubmissionKeys)
-	if err != nil {
-		errorMsg := fmt.Sprintf("Error finalizing batches for epoch %s: %v", s.EpochID.String(), err)
-		clients.SendFailureNotification(pkgs.BuildBatchSubmissions, errorMsg, time.Now().String(), "High")
-		log.Errorf("Batch finalization error: %s", errorMsg)
-		return nil, err
-	}
-
-	// Step 3: Log and return the finalized batch submissions
-	log.Debugf("Successfully finalized %d batch submissions for epoch %s", len(finalizedBatches), s.EpochID.String())
-
-	return finalizedBatches, nil
-}
-
-func arrangeSubmissionKeysInBatches(projectMap map[string][]string) []map[string][]string {
-	var (
-		batchSize = config.SettingsObj.BatchSize              // Maximum number of batches
-		batches   = make([]map[string][]string, 0, batchSize) // Preallocate slice with capacity of batchSize
-		count     = 0                                         // Keeps track of the number of batches
-	)
-
-	// Iterate over each project's submission keys
-	for projectID, submissionKeys := range projectMap {
-		if count >= batchSize { // Stop if batchSize is reached
-			break
-		}
-
-		// Create a new batch for the current project
-		batch := make(map[string][]string)
-		batch[projectID] = submissionKeys
-
-		// Add the batch to the list
-		batches = append(batches, batch)
-
-		count++
-	}
-
-	return batches
 }
