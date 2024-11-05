@@ -142,7 +142,7 @@ func (s *SubmissionDetails) finalizeBatches(batches []map[string][]string) ([]*i
 	wg.Wait()
 
 	// After finalizing all batches, send them to the external tx relayer service
-	if err := clients.SendSubmissionBatchSize(s.EpochID, len(finalizedBatchSubmissions)); err != nil {
+	if err := clients.SendSubmissionBatchSize(s.DataMarketAddress, s.EpochID, len(finalizedBatchSubmissions)); err != nil {
 		errorMsg := fmt.Sprintf("Error sending submission batch size for epoch %s: %v", s.EpochID.String(), err)
 		clients.SendFailureNotification(pkgs.SendSubmissionBatchSize, errorMsg, time.Now().String(), "Medium")
 		log.Errorln(errorMsg)
