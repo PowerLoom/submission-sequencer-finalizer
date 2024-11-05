@@ -58,6 +58,7 @@ func StartSubmissionProcessor() {
 
 // BuildBatchSubmissions organizes project submission keys into batches and finalizes them for processing.
 func (s *SubmissionDetails) BuildBatchSubmissions() ([]*ipfs.BatchSubmission, error) {
+	log.Debugf("Building batch submissions for epoch %s in data market %s: %v", s.EpochID.String(), s.DataMarketAddress, s.ProjectMap)
 	// Step 1: Organize the projectMap into batches of submission keys
 	batchedSubmissionKeys := arrangeSubmissionKeysInBatches(s.ProjectMap)
 	log.Debugf("Arranged %d batches of submission keys for processing: %v", len(batchedSubmissionKeys), batchedSubmissionKeys)
