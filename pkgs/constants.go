@@ -12,8 +12,8 @@ const (
 
 // General Key Constants
 const (
-	CurrentDayKey               = "CurrentDayKey"
-	DaySizeTableKey             = "DaySizeTableKey"
-	ProcessTriggerKey           = "TriggeredSequencerProcess"
-	EligibleSubmissionCountsKey = "EligibleSubmissionCountsKey"
+	CurrentDayKey              = "CurrentDayKey"
+	DaySizeTableKey            = "DaySizeTableKey"
+	ProcessTriggerKey          = "TriggeredSequencerProcess"
+	EligibleSlotSubmissionsKey = "EligibleSlotSubmissionsKey"
 )

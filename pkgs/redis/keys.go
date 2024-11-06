@@ -18,6 +18,6 @@ func TriggeredProcessLog(process, identifier string) string {
 	return fmt.Sprintf("%s.%s.%s", pkgs.ProcessTriggerKey, process, identifier)
 }
 
-func GetEligibleSubmissionCountsKey(currentDay, dataMarketAddress, snapshotter string) string {
-	return fmt.Sprintf("%s.%s.%s.%s", pkgs.EligibleSubmissionCountsKey, currentDay, strings.ToLower(dataMarketAddress), snapshotter)
+func EligibleSlotSubmissionKey(dataMarketAddress string, slotID, currentDay string) string {
+	return fmt.Sprintf("%s.%s.%s.%s", pkgs.EligibleSlotSubmissionsKey, strings.ToLower(dataMarketAddress), currentDay, slotID)
 }
