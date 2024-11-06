@@ -94,7 +94,7 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 	}, nil
 }
 
-// GetRootHash returns the hexadecimal string representation of the root digest of the Merkle tree (without 0x prefix)
+// GetRootHash returns the hexadecimal string representation of the root digest of the Merkle tree (with 0x prefix)
 func GetRootHash(tree *imt.IncrementalMerkleTree) string {
 	return crypto.Keccak256Hash(tree.RootDigest()).Hex()
 }
