@@ -9,6 +9,7 @@ import (
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"time"
+
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sergerad/incremental-merkle-tree/imt"
 	log "github.com/sirupsen/logrus"
@@ -89,7 +90,7 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 		Batch:                 batchData,
 		CID:                   batchCID,
 		EpochID:               epochID,
-		FinalizedCIDsRootHash: fmt.Sprintf("0x%x", GetRootHash(finalizedCIDMerkleTree)),
+		FinalizedCIDsRootHash: GetRootHash(finalizedCIDMerkleTree),
 	}, nil
 }
 
