@@ -90,11 +90,11 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 		Batch:                 batchData,
 		CID:                   batchCID,
 		EpochID:               epochID,
-		FinalizedCIDsRootHash: finalizedCIDMerkleTree.RootDigest(),
+		FinalizedCIDsRootHash: fmt.Sprintf("0x%x", GetRootHash(finalizedCIDMerkleTree)),
 	}, nil
 }
 
-// GetRootHash returns the hexadecimal root digest of the Merkle tree.
+// GetRootHash returns the hexadecimal string representation of the root digest of the Merkle tree (without 0x prefix)
 func GetRootHash(tree *imt.IncrementalMerkleTree) string {
 	return common.Bytes2Hex(tree.RootDigest())
 }

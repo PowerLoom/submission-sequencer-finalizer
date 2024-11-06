@@ -30,7 +30,7 @@ type BatchSubmission struct {
 	Batch                 *Batch
 	CID                   string
 	EpochID               *big.Int
-	FinalizedCIDsRootHash []byte
+	FinalizedCIDsRootHash string
 }
 
 // ConnectIPFSNode connects to the IPFS node using the provided configuration
