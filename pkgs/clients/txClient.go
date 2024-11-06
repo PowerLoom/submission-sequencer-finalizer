@@ -49,7 +49,7 @@ func SubmitSubmissionBatch(dataMarketAddress, batchCID string, epochID *big.Int,
 		EpochID:               epochID,
 		ProjectIDs:            projectIDs,
 		SnapshotCIDs:          snapshotCIDs,
-		FinalizedCIDsRootHash: fmt.Sprintf("0x%x", finalizedCIDsRootHash),
+		FinalizedCIDsRootHash: finalizedCIDsRootHash,
 		AuthToken:             config.SettingsObj.TxRelayerAuthWriteToken,
 	}
 
