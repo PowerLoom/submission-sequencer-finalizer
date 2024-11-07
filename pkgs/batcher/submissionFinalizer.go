@@ -135,7 +135,7 @@ func (s *SubmissionDetails) submitWithRetries(finalizedBatchSubmission *ipfs.Bat
 			s.EpochID,
 			finalizedBatchSubmission.Batch.PIDs,
 			finalizedBatchSubmission.Batch.CIDs,
-			common.Bytes2Hex(finalizedBatchSubmission.FinalizedCIDsRootHash),
+			string(finalizedBatchSubmission.FinalizedCIDsRootHash),
 		)
 		if err != nil {
 			log.Errorf("Batch submission failed for CID %s: %v. Retrying...", finalizedBatchSubmission.CID, err)

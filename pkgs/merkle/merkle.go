@@ -10,7 +10,7 @@ import (
 	"submission-sequencer-finalizer/pkgs/redis"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sergerad/incremental-merkle-tree/imt"
 	log "github.com/sirupsen/logrus"
 )
@@ -90,13 +90,13 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 		Batch:                 batchData,
 		CID:                   batchCID,
 		EpochID:               epochID,
-		FinalizedCIDsRootHash: finalizedCIDMerkleTree.RootDigest(),
+		FinalizedCIDsRootHash: GetRootHash(finalizedCIDMerkleTree),
 	}, nil
 }
 
-// GetRootHash returns the hexadecimal root digest of the Merkle tree.
+// GetRootHash returns the hexadecimal string representation of the root digest of the Merkle tree (with 0x prefix)
 func GetRootHash(tree *imt.IncrementalMerkleTree) string {
-	return common.Bytes2Hex(tree.RootDigest())
+	return crypto.Keccak256Hash(tree.RootDigest()).Hex()
 }
 
 // UpdateMerkleTree adds all provided IDs to the Merkle tree as leaves and returns the updated tree.
