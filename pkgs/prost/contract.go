@@ -72,7 +72,7 @@ func LoadContractStateVariables() {
 			// Store the day size in the Redis hash table
 			err := redis.RedisClient.HSet(context.Background(), redis.GetDaySizeTableKey(), dataMarketAddress.Hex(), daySize).Err()
 			if err != nil {
-				log.Errorf("Failed to set day size for %s in Redis: %v", dataMarketAddress.Hex(), err)
+				log.Errorf("Failed to set day size for data market %s in Redis: %v", dataMarketAddress.Hex(), err)
 			}
 		}
 	}
@@ -104,7 +104,7 @@ func FetchCurrentDay(dataMarketAddress common.Address, epochID int64) (*big.Int,
 	// Fetch the current day for the given data market address from Redis
 	value, err := redis.Get(context.Background(), redis.GetCurrentDayKey(dataMarketAddress.Hex()))
 	if err != nil {
-		log.Errorf("Error fetching day value for %s from Redis: %v", dataMarketAddress.Hex(), err)
+		log.Errorf("Error fetching day value for data market %s from Redis: %v", dataMarketAddress.Hex(), err)
 		return nil, err
 	}
 
@@ -126,7 +126,7 @@ func FetchCurrentDay(dataMarketAddress common.Address, epochID int64) (*big.Int,
 	// Fetch day size for the specified data market address from Redis
 	daySize, err := redis.GetDaySize(context.Background(), dataMarketAddress.Hex())
 	if err != nil {
-		log.Errorf("Failed to fetch day size for data market address %s: %v", dataMarketAddress, err)
+		log.Errorf("Failed to fetch day size for data market %s: %v", dataMarketAddress, err)
 		return nil, err
 	}
 
@@ -135,7 +135,7 @@ func FetchCurrentDay(dataMarketAddress common.Address, epochID int64) (*big.Int,
 
 	// Set the current day in Redis with the calculated expiration duration
 	if err := redis.SetWithExpiration(context.Background(), redis.GetCurrentDayKey(dataMarketAddress.Hex()), currentDay.String(), time.Until(expirationTime)); err != nil {
-		return nil, fmt.Errorf("failed to cache day value for %s in Redis: %v", dataMarketAddress, err)
+		return nil, fmt.Errorf("failed to cache day value for data market %s in Redis: %v", dataMarketAddress, err)
 	}
 
 	return currentDay, nil

@@ -113,13 +113,13 @@ func GetDaySize(ctx context.Context, dataMarketAddress string) (*big.Int, error)
 	// Fetch DAY_SIZE for the given data market address from Redis
 	daySizeStr, err := RedisClient.HGet(context.Background(), GetDaySizeTableKey(), dataMarketAddress).Result()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch day size for data market address %s: %s", dataMarketAddress, err)
+		return nil, fmt.Errorf("failed to fetch day size for data market %s: %s", dataMarketAddress, err)
 	}
 
 	// Convert the day size from string to *big.Int
 	daySize, ok := new(big.Int).SetString(daySizeStr, 10)
 	if !ok {
-		return nil, fmt.Errorf("invalid day size value for data market address %s: %s", dataMarketAddress, daySizeStr)
+		return nil, fmt.Errorf("invalid day size value for data market %s: %s", dataMarketAddress, daySizeStr)
 	}
 
 	return daySize, nil
