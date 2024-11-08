@@ -16,25 +16,29 @@ import (
 )
 
 // BuildMerkleTree constructs Merkle trees for both submission IDs and finalized CIDs, stores the batch on IPFS, and logs the process
-func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, projectIDs, CIDs []string) (*ipfs.BatchSubmission, error) {
+func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, projectIDs, CIDs []string, dataMarketAddress string, batchID int) (*ipfs.BatchSubmission, error) {
 	// Create a new Merkle tree for submission IDs
 	submissionIDMerkleTree, err := imt.New()
 	if err != nil {
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error creating Merkle tree for submission IDs: %s\n", err.Error()), time.Now().String(), "High")
-		log.Errorf("Error creating Merkle tree for submission IDs: %s", err.Error())
+		errorMsg := fmt.Sprintf("Failed to create submissionIDs merkle tree for batch %d of epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+		log.Error(errorMsg)
 		return nil, err
 	}
-
-	log.Debugln("Building Merkle tree for epoch: ", epochID.String())
 
 	// Efficiently update the Merkle tree with submission IDs
 	if _, err = UpdateMerkleTree(submissionIDs, submissionIDMerkleTree); err != nil {
+		errorMsg := fmt.Sprintf("Error updating submissionIDs merkle tree for batch %d of epoch %s within data market %s: %v", batchID, epochID.String(), dataMarketAddress, err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+		log.Error(errorMsg)
 		return nil, err
 	}
 
+	log.Infof("✅ Successfully updated submissionIDs merkle tree for batch %d in epoch %s within data market %s", batchID, epochID.String(), dataMarketAddress)
+
 	// Get the root hash of the submission ID Merkle tree
 	submissionIDRootHash := GetRootHash(submissionIDMerkleTree)
-	log.Debugf("Root hash for batch in epoch %s: %s", epochID.String(), submissionIDRootHash)
+	log.Infof("🔍 SubmissionIDs merkle tree root hash for batch %d in epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, submissionIDRootHash)
 
 	// Create a new batch and store it in IPFS
 	batchData := &ipfs.Batch{
@@ -48,12 +52,13 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 	// Store the batch in IPFS and get the corresponding CID
 	batchCID, err := ipfs.StoreOnIPFS(ipfs.IPFSClient, batchData)
 	if err != nil {
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error storing batch on IPFS: %s", err.Error()), time.Now().String(), "High")
-		log.Errorf("Error storing batch on IPFS: %s", err.Error())
+		errorMsg := fmt.Sprintf("Error storing batch %d data on IPFS for epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+		log.Error(errorMsg)
 		return nil, err
 	}
 
-	log.Debugf("Stored CID for batch: %s", batchCID)
+	log.Infof("📦 Batch %d data stored on IPFS with CID %s for epoch %s within data market %s", batchID, batchCID, epochID.String(), dataMarketAddress)
 
 	// Log the batch processing success
 	processLogEntry := map[string]interface{}{
@@ -66,22 +71,25 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 
 	// Store the process log in Redis
 	if err = redis.SetProcessLog(context.Background(), redis.TriggeredProcessLog(pkgs.BuildMerkleTree, submissionIDRootHash), processLogEntry, 4*time.Hour); err != nil {
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, err.Error(), time.Now().String(), "High")
-		log.Errorln("Error storing BuildMerkleTree process log: ", err.Error())
+		errorMsg := fmt.Sprintf("Error storing process log for batch %d of epoch %s within data market %s in Redis: %s", batchID, epochID.String(), dataMarketAddress, err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+		log.Error(errorMsg)
 	}
 
 	// Create a new Merkle tree for finalized CIDs
 	finalizedCIDMerkleTree, err := imt.New()
 	if err != nil {
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error creating Merkle tree for CIDs: %s\n", err.Error()), time.Now().String(), "High")
-		log.Errorf("Error creating Merkle tree for CIDs: %s\n", err.Error())
+		errorMsg := fmt.Sprintf("Failed to create finalized CIDs merkle tree for batch %d of epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+		log.Error(errorMsg)
 		return nil, err
 	}
 
 	// Update the Merkle tree with CIDs
 	if _, err = UpdateMerkleTree(batchData.CIDs, finalizedCIDMerkleTree); err != nil {
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, fmt.Sprintf("Error updating Merkle tree for batch with roothash %s: %s", submissionIDRootHash, err.Error()), time.Now().String(), "High")
-		log.Errorln("Unable to get finalized root hash: ", err.Error())
+		errorMsg := fmt.Sprintf("Error updating finalized CIDs merkle tree for batch %d of epoch %s within data market %s: %v", batchID, epochID.String(), dataMarketAddress, err.Error())
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+		log.Error(errorMsg)
 		return nil, err
 	}
 
