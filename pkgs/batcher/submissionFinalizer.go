@@ -220,7 +220,7 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 	// Update eligible submission counts in Redis for each slotID
 	for slotID, submissionCount := range eligibleSubmissionCounts {
 		// Set the eligible submission count in Redis
-		key := redis.EligibleSlotSubmissionKey(s.DataMarketAddress, currentDay.String(), slotID)
+		key := redis.EligibleSlotSubmissionKey(s.DataMarketAddress, slotID, currentDay.String())
 		updatedCount, err := redis.IncrBy(context.Background(), key, int64(submissionCount))
 		if err != nil {
 			log.Errorf("Failed to update eligible submission count for slotID %s in epoch %s within data market %s: %v", slotID, s.EpochID, dataMarketAddress, err)
