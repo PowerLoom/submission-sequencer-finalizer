@@ -16,6 +16,15 @@ type TxRelayerClient struct {
 	client *http.Client
 }
 
+type EligibleSubmissionCountRequest struct {
+	DataMarketAddress string   `json:"dataMarketAddress"`
+	EpochID           *big.Int `json:"epochID"`
+	SlotID            string   `json:"slotID"`
+	CurrentDay        string   `json:"day"`
+	Count             int      `json:"eligibleSubmissionCount"`
+	AuthToken         string   `json:"authToken"`
+}
+
 type SubmitSubmissionBatchRequest struct {
 	DataMarketAddress     string   `json:"dataMarketAddress"`
 	BatchCID              string   `json:"batchCID"`
@@ -41,7 +50,38 @@ func InitializeTxClient(url string, timeout time.Duration) {
 	}
 }
 
-// SubmitSubmissionBatch submits a batch of submissions for a given epoch
+// SendSubmissionCount sends submission count data to the transaction relayer service
+func SendSubmissionCount(dataMarketAddress, slotID, currentDay string, epochID *big.Int, submissionCount int) error {
+	request := EligibleSubmissionCountRequest{
+		DataMarketAddress: dataMarketAddress,
+		EpochID:           epochID,
+		SlotID:            slotID,
+		CurrentDay:        currentDay,
+		Count:             submissionCount,
+		AuthToken:         config.SettingsObj.TxRelayerAuthWriteToken,
+	}
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("unable to marshal submission count request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/submitSubmissionCount", txRelayerClient.url)
+
+	resp, err := txRelayerClient.client.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("unable to send submission count request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to send submission count request, status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// SubmitSubmissionBatch submits a batch of submissions for a given epoch to the transaction relayer service
 func SubmitSubmissionBatch(dataMarketAddress, batchCID string, epochID *big.Int, projectIDs, snapshotCIDs []string, finalizedCIDsRootHash string) error {
 	request := SubmitSubmissionBatchRequest{
 		DataMarketAddress:     dataMarketAddress,
