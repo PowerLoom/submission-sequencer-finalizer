@@ -16,13 +16,13 @@ type TxRelayerClient struct {
 	client *http.Client
 }
 
-type EligibleSubmissionCountRequest struct {
-	DataMarketAddress string   `json:"dataMarketAddress"`
-	EpochID           *big.Int `json:"epochID"`
-	SlotID            string   `json:"slotID"`
-	CurrentDay        string   `json:"day"`
-	Count             int      `json:"eligibleSubmissionCount"`
-	AuthToken         string   `json:"authToken"`
+type UpdateRewardsRequest struct {
+	DataMarketAddress string     `json:"dataMarketAddress"`
+	SlotIDs           []*big.Int `json:"slotIDs"`
+	SubmissionsList   []*big.Int `json:"submissionsList"`
+	Day               *big.Int   `json:"day"`
+	EligibleNodes     int        `json:"eligibleNodes"`
+	AuthToken         string     `json:"authToken"`
 }
 
 type SubmitSubmissionBatchRequest struct {
@@ -50,32 +50,32 @@ func InitializeTxClient(url string, timeout time.Duration) {
 	}
 }
 
-// SendSubmissionCount sends submission count data to the transaction relayer service
-func SendSubmissionCount(dataMarketAddress, slotID, currentDay string, epochID *big.Int, submissionCount int) error {
-	request := EligibleSubmissionCountRequest{
+// SendUpdateRewardsRequest sends rewards update data to the transaction relayer service
+func SendUpdateRewardsRequest(dataMarketAddress string, slotIDs, submissionsList []*big.Int, day *big.Int, eligibleNodes int) error {
+	request := UpdateRewardsRequest{
 		DataMarketAddress: dataMarketAddress,
-		EpochID:           epochID,
-		SlotID:            slotID,
-		CurrentDay:        currentDay,
-		Count:             submissionCount,
+		SlotIDs:           slotIDs,
+		SubmissionsList:   submissionsList,
+		Day:               day,
+		EligibleNodes:     eligibleNodes,
 		AuthToken:         config.SettingsObj.TxRelayerAuthWriteToken,
 	}
 
 	jsonData, err := json.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("unable to marshal submission count request: %w", err)
+		return fmt.Errorf("unable to marshal update rewards request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/submitSubmissionCount", txRelayerClient.url)
+	url := fmt.Sprintf("%s/submitUpdateRewards", txRelayerClient.url)
 
 	resp, err := txRelayerClient.client.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("unable to send submission count request: %w", err)
+		return fmt.Errorf("unable to send update rewards request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to send submission count request, status code: %d", resp.StatusCode)
+		return fmt.Errorf("failed to send update rewards request, status code: %d", resp.StatusCode)
 	}
 
 	return nil

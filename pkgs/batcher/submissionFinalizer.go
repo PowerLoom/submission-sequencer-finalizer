@@ -2,6 +2,7 @@ package batcher
 
 import (
 	"context"
+	"math/big"
 	"strings"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
@@ -180,6 +181,10 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		return err
 	}
 
+	// Update eligible submission counts in Redis and prepare data for relayer
+	slotIDs := make([]*big.Int, 0)
+	submissionsList := make([]*big.Int, 0)
+
 	// Update eligible submission counts in Redis for each slotID
 	for slotID, submissionCount := range eligibleSubmissionCounts {
 		// Set the eligible submission count in Redis
@@ -192,29 +197,42 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 		log.Debugf("✅ Successfully updated eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %d", slotID, s.BatchID, s.EpochID, dataMarketAddress, updatedCount)
 
-		// Send submission count to relayer only if the current epoch is a multiple of 5
-		if s.EpochID.Int64()%5 == 0 {
-			if err := s.sendEligibleSubmissionCountToRelayer(slotID, currentDay.String(), updatedCount); err != nil {
-				log.Errorf("Failed to send eligible submission count to relayer for slotID %s of batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID, s.DataMarketAddress, err)
-				return err
-			}
+		// Prepare data for relayer
+		slotIDBigInt, ok := new(big.Int).SetString(slotID, 10)
+		if !ok {
+			log.Errorf("Failed to convert slotID %s to big.Int", slotID)
+			continue
 		}
+
+		slotIDs = append(slotIDs, slotIDBigInt)
+		submissionsList = append(submissionsList, big.NewInt(updatedCount))
+	}
+
+	// Send submission count to relayer only if the current epoch is a multiple of 5
+	if s.EpochID.Int64()%5 == 0 {
+		// Send the updateRewards request to the relayer
+		if err := s.sendUpdateRewardsToRelayer(slotIDs, submissionsList, currentDay); err != nil {
+			log.Errorf("Failed to send updateRewards request to relayer for batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID, s.DataMarketAddress, err)
+			return err
+		}
+
+		log.Infof("✅ Successfully sent updateRewards request for batch %d, epoch %s in data market %s", s.BatchID, s.EpochID, s.DataMarketAddress)
 	}
 
 	return nil
 }
 
-func (s *SubmissionDetails) sendEligibleSubmissionCountToRelayer(slotID, currentDay string, submissionCount int64) error {
+func (s *SubmissionDetails) sendUpdateRewardsToRelayer(slotIDs, submissionsList []*big.Int, day *big.Int) error {
 	// Define the operation that will be retried
 	operation := func() error {
-		// Attempt to send the eligible submission count
-		err := clients.SendSubmissionCount(s.DataMarketAddress, slotID, currentDay, s.EpochID, int(submissionCount))
+		// Attempt to send the updateRewards request
+		err := clients.SendUpdateRewardsRequest(s.DataMarketAddress, slotIDs, submissionsList, day, 0)
 		if err != nil {
-			log.Errorf("Error sending eligible submission count for slotID %s, batch %d, epoch %s in data market %s: %v. Retrying...", slotID, s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
+			log.Errorf("Error sending updateRewards request for batch %d, epoch %s in data market %s: %v. Retrying...", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
 			return err // Return error to trigger retry
 		}
 
-		log.Infof("📤 Successfully sent eligible submission count %d for slotID %s, batch %d, epoch %s to relayer in data market %s", submissionCount, slotID, s.BatchID, s.EpochID.String(), s.DataMarketAddress)
+		log.Infof("📤 Successfully sent updateRewards request for batch %d, epoch %s to relayer in data market %s", s.BatchID, s.EpochID.String(), s.DataMarketAddress)
 		return nil // Successful submission, no need for further retries
 	}
 
@@ -227,7 +245,7 @@ func (s *SubmissionDetails) sendEligibleSubmissionCountToRelayer(slotID, current
 
 	// Limit retries to a maximum of 3 attempts within 10 seconds
 	if err := backoff.Retry(operation, backoff.WithMaxRetries(backoffConfig, 3)); err != nil {
-		log.Errorf("Failed to send eligible submission count after retries for slotID %s, batch %d, epoch %s in data market %s: %v", slotID, s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
+		log.Errorf("Failed to send updateRewards request after retries for batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
 		return err
 	}
 
