@@ -215,8 +215,6 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 			log.Errorf("Failed to send updateRewards request to relayer for batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID, s.DataMarketAddress, err)
 			return err
 		}
-
-		log.Infof("✅ Successfully sent updateRewards request for batch %d, epoch %s in data market %s", s.BatchID, s.EpochID, s.DataMarketAddress)
 	}
 
 	return nil
