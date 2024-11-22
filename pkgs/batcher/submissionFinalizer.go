@@ -2,6 +2,7 @@ package batcher
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"strings"
 	"submission-sequencer-finalizer/pkgs"
@@ -100,7 +101,9 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 
 	// Update eligible submission counts for each snapshotter identity in the batch based on the most frequent snapshot CID
 	if err := s.UpdateEligibleSubmissionCounts(s.Batch, projectMostFrequentCID, submissionSnapshotCIDMap); err != nil {
-		log.Errorf("Error updating eligible submission counts for batch %d of epoch %s, data market %s: %v", s.BatchID, s.EpochID, s.DataMarketAddress, err)
+		errorMsg := fmt.Sprintf("❌ Eligible submission counts update failed: Batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
+		clients.SendFailureNotification(pkgs.UpdateEligibleSubmissionCounts, errorMsg, time.Now().String(), "High")
+		log.Errorf(errorMsg)
 		return nil, err
 	}
 
@@ -117,7 +120,15 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 	// Build the Merkle tree for the current batch and generate the IPFS BatchSubmission
 	finalizedBatchSubmission, err := merkle.BuildMerkleTree(submissionIDs, submissionData, s.EpochID, projectIDList, mostFrequentCIDList, s.DataMarketAddress, s.BatchID)
 	if err != nil {
-		log.Errorf("Error building merkle tree: %v", err)
+		errorMsg := fmt.Sprintf(
+			"❌ Merkle tree error: Failed to build merkle tree for batch %d, epoch %s within data market %s: %v",
+			s.BatchID,
+			s.EpochID.String(),
+			s.DataMarketAddress,
+			err,
+		)
+		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+		log.Errorf(errorMsg)
 		return nil, err
 	}
 
@@ -126,7 +137,16 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 	// Submit finalized batch submission to the external tx Relayer service with retry mechanism
 	err = s.sendSubmissionBatchToRelayer(finalizedBatchSubmission)
 	if err != nil {
-		log.Errorf("Failed to send batch %d submission with CID %s to the relayer for epoch %s in data market %s: %v", s.BatchID, finalizedBatchSubmission.CID, s.EpochID.String(), s.DataMarketAddress, err)
+		errorMsg := fmt.Sprintf(
+			"🚨 Relayer submission failed: Batch %d submission with CID %s for epoch %s in data market %s: %v",
+			s.BatchID,
+			finalizedBatchSubmission.CID,
+			s.EpochID.String(),
+			s.DataMarketAddress,
+			err,
+		)
+		clients.SendFailureNotification(pkgs.SendSubmissionBatchToRelayer, errorMsg, time.Now().String(), "High")
+		log.Errorf(errorMsg)
 		return nil, err
 	}
 
@@ -212,7 +232,15 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 	if s.EpochID.Int64()%5 == 0 {
 		// Send the updateRewards request to the relayer
 		if err := s.sendUpdateRewardsToRelayer(slotIDs, submissionsList, currentDay); err != nil {
-			log.Errorf("Failed to send updateRewards request to relayer for batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID, s.DataMarketAddress, err)
+			errorMsg := fmt.Sprintf(
+				"🚨 Relayer rewards update failed: Batch %d, epoch %s in data market %s: %v",
+				s.BatchID,
+				s.EpochID.String(),
+				s.DataMarketAddress,
+				err,
+			)
+			clients.SendFailureNotification(pkgs.SendUpdateRewardsToRelayer, errorMsg, time.Now().String(), "High")
+			log.Errorf(errorMsg)
 			return err
 		}
 	}
