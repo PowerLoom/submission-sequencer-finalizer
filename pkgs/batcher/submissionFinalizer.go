@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
@@ -101,9 +102,7 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 
 	// Update eligible submission counts for each snapshotter identity in the batch based on the most frequent snapshot CID
 	if err := s.UpdateEligibleSubmissionCounts(s.Batch, projectMostFrequentCID, submissionSnapshotCIDMap); err != nil {
-		errorMsg := fmt.Sprintf("❌ Eligible submission counts update failed: Batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
-		clients.SendFailureNotification(pkgs.UpdateEligibleSubmissionCounts, errorMsg, time.Now().String(), "High")
-		log.Errorf(errorMsg)
+		log.Errorf("❌ Eligible submission counts update failed: Batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
 		return nil, err
 	}
 
@@ -201,6 +200,13 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		return err
 	}
 
+	// Fetch daily snapshot quota for the specified data market address from Redis
+	dailySnapshotQuota, err := redis.GetDailySnapshotQuota(context.Background(), dataMarketAddress)
+	if err != nil {
+		log.Errorf("Failed to fetch daily snapshot quota for data market %s: %v", dataMarketAddress, err)
+		return err
+	}
+
 	// Update eligible submission counts in Redis and prepare data for relayer
 	slotIDs := make([]*big.Int, 0)
 	submissionsList := make([]*big.Int, 0)
@@ -217,6 +223,14 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 		log.Debugf("✅ Successfully updated eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %d", slotID, s.BatchID, s.EpochID, dataMarketAddress, updatedCount)
 
+		// If the eligible submission count for a slotID exceeds the daily snapshot quota, add the slotID to the set
+		if updatedCount >= dailySnapshotQuota.Int64() {
+			if err := redis.AddToSet(context.Background(), redis.EligibleSlotSubmissionsByDayKey(dataMarketAddress, currentDay.String()), slotID); err != nil {
+				log.Errorf("Failed to add slotID %s to eligible submissions set for data market %s on day %s: %v", slotID, dataMarketAddress, currentDay.String(), err)
+				continue
+			}
+		}
+
 		// Prepare data for relayer
 		slotIDBigInt, ok := new(big.Int).SetString(slotID, 10)
 		if !ok {
@@ -227,6 +241,21 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		slotIDs = append(slotIDs, slotIDBigInt)
 		submissionsList = append(submissionsList, big.NewInt(updatedCount))
 	}
+
+	// Fetch the count of eligible slotIDs in the Redis set
+	eligibleNodesCount, err := calculateEligibleNodes(dataMarketAddress, currentDay.String())
+	if err != nil {
+		log.Errorf("Error calculating eligible nodes for data market %s on day %s: %v", dataMarketAddress, currentDay.String(), err)
+		return err
+	}
+
+	// Store the eligible nodes count in a Redis key
+	if err := redis.Set(context.Background(), redis.EligibleNodesCountByDayKey(dataMarketAddress, currentDay.String()), strconv.Itoa(eligibleNodesCount)); err != nil {
+		log.Errorf("Failed to set eligible nodes count for data market %s on day %s: %v", dataMarketAddress, currentDay.String(), err)
+		return err
+	}
+
+	log.Infof("✅ Successfully set eligible nodes count (%d) for data market %s on day %s", eligibleNodesCount, dataMarketAddress, currentDay.String())
 
 	// Send submission count to relayer only if the current epoch is a multiple of 5
 	if s.EpochID.Int64()%5 == 0 {
@@ -246,6 +275,21 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 	}
 
 	return nil
+}
+
+// calculateEligibleNodes calculates the number of eligible nodes for a given data market and day
+func calculateEligibleNodes(dataMarketAddress, day string) (int, error) {
+	// Build the Redis key to fetch eligible slot submissions for the specified day
+	eligibleSubmissionsSetKey := redis.EligibleSlotSubmissionsByDayKey(dataMarketAddress, day)
+
+	// Retrieve the cardinality (count) of the set associated with the Redis key
+	eligibleNodesCount, err := redis.GetSetCardinality(context.Background(), eligibleSubmissionsSetKey)
+	if err != nil {
+		log.Errorf("Error fetching eligible nodes for data market %s on day %s: %v", dataMarketAddress, day, err)
+		return 0, fmt.Errorf("failed to fetch eligible nodes for data market %s on day %s: %w", dataMarketAddress, day, err)
+	}
+
+	return eligibleNodesCount, nil
 }
 
 func (s *SubmissionDetails) sendUpdateRewardsToRelayer(slotIDs, submissionsList []*big.Int, day *big.Int) error {

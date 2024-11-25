@@ -75,6 +75,20 @@ func LoadContractStateVariables() {
 				log.Errorf("Failed to set day size for data market %s in Redis: %v", dataMarketAddress.Hex(), err)
 			}
 		}
+
+		// Fetch the daily snapshot quota for the specified data market address from contract
+		if output, err := MustQuery(context.Background(), func() (*big.Int, error) {
+			return Instance.DailySnapshotQuota(&bind.CallOpts{}, dataMarketAddress)
+		}); err == nil {
+			// Convert the daily snapshot quota to a string for storage in Redis
+			dailySnapshotQuota := output.String()
+
+			// Store the daily snapshot quota in the Redis hash table
+			err := redis.RedisClient.HSet(context.Background(), redis.GetDailySnapshotQuotaTableKey(), dataMarketAddress.Hex(), dailySnapshotQuota).Err()
+			if err != nil {
+				log.Errorf("Failed to set daily snapshot quota for data market %s in Redis: %v", dataMarketAddress.Hex(), err)
+			}
+		}
 	}
 }
 
