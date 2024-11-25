@@ -27,6 +27,7 @@ type Settings struct {
 	DataMarketAddresses         []string
 	DataMarketContractAddresses []common.Address
 	ProcessSwitch               bool
+	SuccessNotification         bool
 }
 
 func LoadConfig() {
@@ -46,6 +47,11 @@ func LoadConfig() {
 		log.Fatalf("Failed to parse PROCESS_SWITCH environment variable: %v", processSwitchParseErr)
 	}
 
+	successNotification, successNotificationErr := strconv.ParseBool(getEnv("SUCCESS_NOTIFICATION", "true"))
+	if successNotificationErr != nil {
+		log.Fatalf("Failed to parse SUCCESS_NOTIFICATION environment variable: %v", successNotificationErr)
+	}
+
 	config := Settings{
 		ClientUrl:               getEnv("PROST_RPC_URL", ""),
 		ContractAddress:         getEnv("PROTOCOL_STATE_CONTRACT", ""),
@@ -58,6 +64,7 @@ func LoadConfig() {
 		TxRelayerAuthWriteToken: getEnv("TX_RELAYER_AUTH_WRITE_TOKEN", ""),
 		DataMarketAddresses:     dataMarketAddressesList,
 		ProcessSwitch:           processSwitch,
+		SuccessNotification:     successNotification,
 	}
 
 	for _, addr := range config.DataMarketAddresses {
