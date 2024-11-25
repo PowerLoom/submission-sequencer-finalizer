@@ -102,7 +102,7 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 
 	// Update eligible submission counts for each snapshotter identity in the batch based on the most frequent snapshot CID
 	if err := s.UpdateEligibleSubmissionCounts(s.Batch, projectMostFrequentCID, submissionSnapshotCIDMap); err != nil {
-		log.Errorf("❌ Eligible submission counts update failed: Batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
+		log.Errorf("Error updating eligible submission counts for batch %d of epoch %s, data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
 		return nil, err
 	}
 
@@ -119,15 +119,7 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 	// Build the Merkle tree for the current batch and generate the IPFS BatchSubmission
 	finalizedBatchSubmission, err := merkle.BuildMerkleTree(submissionIDs, submissionData, s.EpochID, projectIDList, mostFrequentCIDList, s.DataMarketAddress, s.BatchID)
 	if err != nil {
-		errorMsg := fmt.Sprintf(
-			"❌ Merkle tree error: Failed to build merkle tree for batch %d, epoch %s within data market %s: %v",
-			s.BatchID,
-			s.EpochID.String(),
-			s.DataMarketAddress,
-			err,
-		)
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
-		log.Errorf(errorMsg)
+		log.Errorf("Merkle tree error: Failed to build merkle tree for batch %d, epoch %s within data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
 		return nil, err
 	}
 
@@ -272,6 +264,11 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 			log.Errorf(errorMsg)
 			return err
 		}
+
+		// Success message handling
+		successMsg := fmt.Sprintf("✅ Relayer rewards updated successfully: Batch %d, epoch %s in data market %s", s.BatchID, s.EpochID.String(), s.DataMarketAddress)
+		clients.SendFailureNotification(pkgs.SendUpdateRewardsToRelayer, successMsg, time.Now().String(), "High")
+		log.Infof(successMsg)
 	}
 
 	return nil
