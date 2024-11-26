@@ -95,15 +95,6 @@ func IncrBy(ctx context.Context, key string, size int64) (int64, error) {
 	return result, nil
 }
 
-func GetSetCardinality(ctx context.Context, key string) (int, error) {
-	count, err := RedisClient.SCard(ctx, key).Result()
-	if err != nil {
-		return 0, err
-	}
-
-	return int(count), nil
-}
-
 func SetProcessLog(ctx context.Context, key string, logEntry map[string]interface{}, exp time.Duration) error {
 	data, err := json.Marshal(logEntry)
 	if err != nil {
