@@ -6,7 +6,6 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
@@ -264,13 +263,6 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 			clients.SendFailureNotification(pkgs.SendUpdateRewardsToRelayer, errorMsg, time.Now().String(), "High")
 			log.Errorf(errorMsg)
 			return err
-		}
-
-		// Success message alert
-		if config.SettingsObj.SuccessNotification {
-			successMsg := fmt.Sprintf("✅ Relayer rewards updated successfully: Batch %d, epoch %s in data market %s", s.BatchID, s.EpochID.String(), s.DataMarketAddress)
-			clients.SendFailureNotification(pkgs.SendUpdateRewardsToRelayer, successMsg, time.Now().String(), "High")
-			log.Infof(successMsg)
 		}
 	}
 
