@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/merkle"
 	"submission-sequencer-finalizer/pkgs/prost"
 	"submission-sequencer-finalizer/pkgs/redis"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -235,21 +237,41 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		submissionsList = append(submissionsList, big.NewInt(updatedCount))
 	}
 
-	// Send submission count to relayer only if the current epoch is a multiple of 5
-	if s.EpochID.Int64()%5 == 0 {
-		// Send the updateRewards request to the relayer
-		if err := s.sendUpdateRewardsToRelayer(slotIDs, submissionsList, currentDay); err != nil {
-			errorMsg := fmt.Sprintf(
-				"🚨 Relayer rewards update failed: Batch %d, epoch %s in data market %s: %v",
-				s.BatchID,
-				s.EpochID.String(),
-				s.DataMarketAddress,
-				err,
-			)
-			clients.SendFailureNotification(pkgs.SendUpdateRewardsToRelayer, errorMsg, time.Now().String(), "High")
-			log.Errorf(errorMsg)
-			return err
+	// Fetch the batch size from config
+	batchSize := config.SettingsObj.RelayerBatchSize
+
+	// Send submission count to relayer only if the current epoch is a multiple of epoch interval (config param)
+	if s.EpochID.Int64()%config.SettingsObj.EpochInterval == 0 {
+		var wg sync.WaitGroup
+
+		// Process the data in batches
+		for start := 0; start < len(slotIDs); start += batchSize {
+			end := start + batchSize
+			if end > len(slotIDs) {
+				end = len(slotIDs)
+			}
+
+			slotIDsBatch := slotIDs[start:end]
+			submissionsBatch := submissionsList[start:end]
+
+			wg.Add(1)
+			go func(slotIDsBatch, submissionsBatch []*big.Int) {
+				defer wg.Done()
+
+				// Send the updateRewards request to the relayer
+				if err := s.sendUpdateRewardsToRelayer(slotIDsBatch, submissionsBatch, currentDay); err != nil {
+					errorMsg := fmt.Sprintf("🚨 Relayer batch error in batch %d-%d for batchID %d, epoch %s within data market %s: %v", start, end, s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
+					clients.SendFailureNotification(pkgs.SendUpdateRewardsToRelayer, errorMsg, time.Now().String(), "High")
+					log.Error(errorMsg)
+					return
+				}
+			}(slotIDsBatch, submissionsBatch)
 		}
+
+		// Wait for all batches to complete
+		wg.Wait()
+
+		log.Infof("✅ Successfully sent %d batches to relayer for batchID %d, epoch %s within data market %s", len(slotIDs)/batchSize, s.BatchID, s.EpochID.String(), s.DataMarketAddress)
 	}
 
 	return nil

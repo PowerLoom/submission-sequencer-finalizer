@@ -27,6 +27,8 @@ type Settings struct {
 	DataMarketAddresses         []string
 	DataMarketContractAddresses []common.Address
 	ProcessSwitch               bool
+	RelayerBatchSize            int
+	EpochInterval               int64
 }
 
 func LoadConfig() {
@@ -69,6 +71,18 @@ func LoadConfig() {
 		log.Fatalf("Failed to parse BATCH_SIZE environment variable: %v", batchSizeParseErr)
 	}
 	config.BatchSize = batchSize
+
+	relayerBatchSize, relayerBatchSizeParseErr := strconv.Atoi(getEnv("RELAYER_BATCH_SIZE", ""))
+	if relayerBatchSizeParseErr != nil {
+		log.Fatalf("Failed to parse RELAYER_BATCH_SIZE environment variable: %v", batchSizeParseErr)
+	}
+	config.RelayerBatchSize = relayerBatchSize
+
+	epochInterval, epochIntervalParseErr := strconv.Atoi(getEnv("EPOCH_INTERVAL", ""))
+	if epochIntervalParseErr != nil {
+		log.Fatalf("Failed to parse EPOCH_INTERVAL environment variable: %v", epochIntervalParseErr)
+	}
+	config.EpochInterval = int64(epochInterval)
 
 	blockTime, blockTimeParseErr := strconv.Atoi(getEnv("BLOCK_TIME", ""))
 	if blockTimeParseErr != nil {
