@@ -208,11 +208,19 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		key := redis.EligibleSlotSubmissionKey(s.DataMarketAddress, slotID, currentDay.String())
 		updatedCount, err := redis.IncrBy(context.Background(), key, int64(submissionCount))
 		if err != nil {
-			log.Errorf("Failed to update eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID, dataMarketAddress, err)
+			log.Errorf("Failed to update eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
 			return err
 		}
 
 		log.Debugf("✅ Successfully updated eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %d", slotID, s.BatchID, s.EpochID, dataMarketAddress, updatedCount)
+
+		eligibleSlotSubmissionByEpochKey := redis.EligibleSlotSubmissionsByEpochKey(s.DataMarketAddress, currentDay.String(), s.EpochID.String())
+		if err := redis.RedisClient.HSet(context.Background(), eligibleSlotSubmissionByEpochKey, slotID, updatedCount).Err(); err != nil {
+			log.Errorf("Failed to add eligible submission count for slotID %s to epoch %s hashtable for data market %s: %v", slotID, s.EpochID.String(), dataMarketAddress, err)
+			return err
+		}
+
+		log.Debugf("✅ Successfully added eligible submission count for slotID %s to epoch %s hashtable for data market %s: %d", slotID, s.EpochID.String(), dataMarketAddress, updatedCount)
 
 		// If the eligible submission count for a slotID exceeds the daily snapshot quota, add the slotID to the set
 		if updatedCount >= dailySnapshotQuota.Int64() {
