@@ -124,3 +124,19 @@ func GetDaySize(ctx context.Context, dataMarketAddress string) (*big.Int, error)
 
 	return daySize, nil
 }
+
+func GetDailySnapshotQuota(ctx context.Context, dataMarketAddress string) (*big.Int, error) {
+	// Fetch daily snapshot quota for the given data market address from Redis
+	dailySnapshotQuotaStr, err := RedisClient.HGet(context.Background(), GetDailySnapshotQuotaTableKey(), dataMarketAddress).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch daily snapshot quota for data market %s: %s", dataMarketAddress, err)
+	}
+
+	// Convert the daily snapshot quota from string to *big.Int
+	dailySnapshotQuota, ok := new(big.Int).SetString(dailySnapshotQuotaStr, 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid daily snapshot quota value for data market %s: %s", dataMarketAddress, dailySnapshotQuotaStr)
+	}
+
+	return dailySnapshotQuota, nil
+}

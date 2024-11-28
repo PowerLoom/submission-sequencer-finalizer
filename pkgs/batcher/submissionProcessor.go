@@ -3,13 +3,9 @@ package batcher
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"submission-sequencer-finalizer/config"
-	"submission-sequencer-finalizer/pkgs"
-	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/redis"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -56,9 +52,7 @@ func StartSubmissionProcessor() {
 		// Call the method to finalize the batch submission
 		finalizedBatchSubmission, err := submissionDetails.FinalizeBatch()
 		if err != nil {
-			errorMsg := fmt.Sprintf("Error finalizing batch %d for epoch %s in data market %s: %v", submissionDetails.BatchID, submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress, err)
-			clients.SendFailureNotification(pkgs.FinalizeBatches, errorMsg, time.Now().String(), "High")
-			log.Errorf("Batch finalization failed: %s", errorMsg)
+			log.Errorf("Error finalizing batch %d for epoch %s in data market %s: %v", submissionDetails.BatchID, submissionDetails.EpochID.String(), submissionDetails.DataMarketAddress, err)
 			continue
 		}
 
