@@ -27,8 +27,8 @@ type Settings struct {
 	DataMarketAddresses         []string
 	DataMarketContractAddresses []common.Address
 	ProcessSwitch               bool
-	RelayerBatchSize            int
-	EpochInterval               int64
+	RewardsUpdateBatchSize      int
+	RewardsUpdateEpochInterval  int64
 }
 
 func LoadConfig() {
@@ -72,17 +72,17 @@ func LoadConfig() {
 	}
 	config.BatchSize = batchSize
 
-	relayerBatchSize, relayerBatchSizeParseErr := strconv.Atoi(getEnv("RELAYER_BATCH_SIZE", ""))
-	if relayerBatchSizeParseErr != nil {
-		log.Fatalf("Failed to parse RELAYER_BATCH_SIZE environment variable: %v", batchSizeParseErr)
+	rewardsUpdateBatchSize, rewardsUpdateBatchSizeParseErr := strconv.Atoi(getEnv("REWARDS_UPDATE_BATCH_SIZE", ""))
+	if rewardsUpdateBatchSizeParseErr != nil {
+		log.Fatalf("Failed to parse REWARDS_UPDATE_BATCH_SIZE environment variable: %v", rewardsUpdateBatchSizeParseErr)
 	}
-	config.RelayerBatchSize = relayerBatchSize
+	config.RewardsUpdateBatchSize = rewardsUpdateBatchSize
 
-	epochInterval, epochIntervalParseErr := strconv.Atoi(getEnv("EPOCH_INTERVAL", ""))
-	if epochIntervalParseErr != nil {
-		log.Fatalf("Failed to parse EPOCH_INTERVAL environment variable: %v", epochIntervalParseErr)
+	rewardsUpdateEpochInterval, rewardsUpdateEpochIntervalParseErr := strconv.Atoi(getEnv("REWARDS_UPDATE_EPOCH_INTERVAL", ""))
+	if rewardsUpdateEpochIntervalParseErr != nil {
+		log.Fatalf("Failed to parse REWARDS_UPDATE_EPOCH_INTERVAL environment variable: %v", rewardsUpdateEpochIntervalParseErr)
 	}
-	config.EpochInterval = int64(epochInterval)
+	config.RewardsUpdateEpochInterval = int64(rewardsUpdateEpochInterval)
 
 	blockTime, blockTimeParseErr := strconv.Atoi(getEnv("BLOCK_TIME", ""))
 	if blockTimeParseErr != nil {

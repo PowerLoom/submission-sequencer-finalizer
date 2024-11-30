@@ -238,10 +238,10 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 	}
 
 	// Fetch the batch size from config
-	batchSize := config.SettingsObj.RelayerBatchSize
+	batchSize := config.SettingsObj.RewardsUpdateBatchSize
 
 	// Send submission count to relayer only if the current epoch is a multiple of epoch interval (config param)
-	if s.EpochID.Int64()%config.SettingsObj.EpochInterval == 0 {
+	if s.EpochID.Int64()%config.SettingsObj.RewardsUpdateEpochInterval == 0 {
 		var wg sync.WaitGroup
 
 		// Process the data in batches
