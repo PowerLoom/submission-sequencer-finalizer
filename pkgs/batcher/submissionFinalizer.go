@@ -3,7 +3,6 @@ package batcher
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"strings"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
@@ -198,10 +197,6 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		return err
 	}
 
-	// Update eligible submission counts in Redis and prepare data for relayer
-	slotIDs := make([]*big.Int, 0)
-	submissionsList := make([]*big.Int, 0)
-
 	// Update eligible submission counts in Redis for each slotID
 	for slotID, submissionCount := range eligibleSubmissionCounts {
 		// Set the eligible submission count in Redis
@@ -214,72 +209,15 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 		log.Debugf("✅ Successfully updated eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %d", slotID, s.BatchID, s.EpochID, dataMarketAddress, updatedCount)
 
-		// If the eligible submission count for a slotID exceeds the daily snapshot quota, add the slotID to the set
+		// If the eligible submission count for a slotID exceeds the daily snapshot quota, add the slotID to the eligible nodes set
 		if updatedCount >= dailySnapshotQuota.Int64() {
-			if err := redis.AddToSet(context.Background(), redis.EligibleSlotSubmissionsByDayKey(dataMarketAddress, currentDay.String()), slotID); err != nil {
-				log.Errorf("Failed to add slotID %s to eligible submissions set for data market %s on day %s: %v", slotID, dataMarketAddress, currentDay.String(), err)
+			if err := redis.AddToSet(context.Background(), redis.EligibleNodesByDayKey(dataMarketAddress, currentDay.String()), slotID); err != nil {
+				log.Errorf("Failed to add slotID %s to eligible nodes set for data market %s on day %s: %v", slotID, dataMarketAddress, currentDay.String(), err)
 				continue
 			}
 
-			log.Infof("✅ Successfully added slotID %s to eligible submissions set for data market %s on day %s", slotID, dataMarketAddress, currentDay.String())
+			log.Infof("✅ Successfully added slotID %s to eligible nodes set for data market %s on day %s", slotID, dataMarketAddress, currentDay.String())
 		}
-
-		// Prepare data for relayer
-		slotIDBigInt, ok := new(big.Int).SetString(slotID, 10)
-		if !ok {
-			log.Errorf("Failed to convert slotID %s to big.Int", slotID)
-			continue
-		}
-
-		slotIDs = append(slotIDs, slotIDBigInt)
-		submissionsList = append(submissionsList, big.NewInt(updatedCount))
-	}
-
-	// Send submission count to relayer only if the current epoch is a multiple of 5
-	if s.EpochID.Int64()%5 == 0 {
-		// Send the updateRewards request to the relayer
-		if err := s.sendUpdateRewardsToRelayer(slotIDs, submissionsList, currentDay); err != nil {
-			errorMsg := fmt.Sprintf(
-				"🚨 Relayer rewards update failed: Batch %d, epoch %s in data market %s: %v",
-				s.BatchID,
-				s.EpochID.String(),
-				s.DataMarketAddress,
-				err,
-			)
-			clients.SendFailureNotification(pkgs.SendUpdateRewardsToRelayer, errorMsg, time.Now().String(), "High")
-			log.Errorf(errorMsg)
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *SubmissionDetails) sendUpdateRewardsToRelayer(slotIDs, submissionsList []*big.Int, day *big.Int) error {
-	// Define the operation that will be retried
-	operation := func() error {
-		// Attempt to send the updateRewards request
-		err := clients.SendUpdateRewardsRequest(s.DataMarketAddress, slotIDs, submissionsList, day, 0)
-		if err != nil {
-			log.Errorf("Error sending updateRewards request for batch %d, epoch %s in data market %s: %v. Retrying...", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
-			return err // Return error to trigger retry
-		}
-
-		log.Infof("📤 Successfully sent updateRewards request for batch %d, epoch %s to relayer in data market %s", s.BatchID, s.EpochID.String(), s.DataMarketAddress)
-		return nil // Successful submission, no need for further retries
-	}
-
-	// Customize the backoff configuration
-	backoffConfig := backoff.NewExponentialBackOff()
-	backoffConfig.InitialInterval = 1 * time.Second // Start with a 1-second delay
-	backoffConfig.Multiplier = 1.5                  // Increase interval by 1.5x after each retry
-	backoffConfig.MaxInterval = 4 * time.Second     // Set max interval between retries
-	backoffConfig.MaxElapsedTime = 10 * time.Second // Retry for a maximum of 10 seconds
-
-	// Limit retries to a maximum of 3 attempts within 10 seconds
-	if err := backoff.Retry(operation, backoff.WithMaxRetries(backoffConfig, 3)); err != nil {
-		log.Errorf("Failed to send updateRewards request after retries for batch %d, epoch %s in data market %s: %v", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
-		return err
 	}
 
 	return nil

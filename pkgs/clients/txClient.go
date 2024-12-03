@@ -16,15 +16,6 @@ type TxRelayerClient struct {
 	client *http.Client
 }
 
-type UpdateRewardsRequest struct {
-	DataMarketAddress string     `json:"dataMarketAddress"`
-	SlotIDs           []*big.Int `json:"slotIDs"`
-	SubmissionsList   []*big.Int `json:"submissionsList"`
-	Day               *big.Int   `json:"day"`
-	EligibleNodes     int        `json:"eligibleNodes"`
-	AuthToken         string     `json:"authToken"`
-}
-
 type SubmitSubmissionBatchRequest struct {
 	DataMarketAddress     string   `json:"dataMarketAddress"`
 	BatchCID              string   `json:"batchCID"`
@@ -48,37 +39,6 @@ func InitializeTxClient(url string, timeout time.Duration) {
 			},
 		},
 	}
-}
-
-// SendUpdateRewardsRequest sends rewards update data to the transaction relayer service
-func SendUpdateRewardsRequest(dataMarketAddress string, slotIDs, submissionsList []*big.Int, day *big.Int, eligibleNodes int) error {
-	request := UpdateRewardsRequest{
-		DataMarketAddress: dataMarketAddress,
-		SlotIDs:           slotIDs,
-		SubmissionsList:   submissionsList,
-		Day:               day,
-		EligibleNodes:     eligibleNodes,
-		AuthToken:         config.SettingsObj.TxRelayerAuthWriteToken,
-	}
-
-	jsonData, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("unable to marshal update rewards request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/submitUpdateRewards", txRelayerClient.url)
-
-	resp, err := txRelayerClient.client.Post(url, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("unable to send update rewards request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to send update rewards request, status code: %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
 // SubmitSubmissionBatch submits a batch of submissions for a given epoch to the transaction relayer service
