@@ -27,8 +27,6 @@ type Settings struct {
 	DataMarketAddresses         []string
 	DataMarketContractAddresses []common.Address
 	ProcessSwitch               bool
-	RewardsUpdateBatchSize      int
-	RewardsUpdateEpochInterval  int64
 }
 
 func LoadConfig() {
@@ -71,18 +69,6 @@ func LoadConfig() {
 		log.Fatalf("Failed to parse BATCH_SIZE environment variable: %v", batchSizeParseErr)
 	}
 	config.BatchSize = batchSize
-
-	rewardsUpdateBatchSize, rewardsUpdateBatchSizeParseErr := strconv.Atoi(getEnv("REWARDS_UPDATE_BATCH_SIZE", ""))
-	if rewardsUpdateBatchSizeParseErr != nil {
-		log.Fatalf("Failed to parse REWARDS_UPDATE_BATCH_SIZE environment variable: %v", rewardsUpdateBatchSizeParseErr)
-	}
-	config.RewardsUpdateBatchSize = rewardsUpdateBatchSize
-
-	rewardsUpdateEpochInterval, rewardsUpdateEpochIntervalParseErr := strconv.Atoi(getEnv("REWARDS_UPDATE_EPOCH_INTERVAL", ""))
-	if rewardsUpdateEpochIntervalParseErr != nil {
-		log.Fatalf("Failed to parse REWARDS_UPDATE_EPOCH_INTERVAL environment variable: %v", rewardsUpdateEpochIntervalParseErr)
-	}
-	config.RewardsUpdateEpochInterval = int64(rewardsUpdateEpochInterval)
 
 	blockTime, blockTimeParseErr := strconv.Atoi(getEnv("BLOCK_TIME", ""))
 	if blockTimeParseErr != nil {

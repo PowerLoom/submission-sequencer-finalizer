@@ -15,10 +15,10 @@ const (
 
 // General Key Constants
 const (
-	CurrentDayKey                  = "CurrentDayKey"
-	DaySizeTableKey                = "DaySizeTableKey"
-	ProcessTriggerKey              = "TriggeredSequencerProcess"
-	EligibleSlotSubmissionsKey     = "EligibleSlotSubmissionsKey"
-	DailySnapshotQuotaTableKey     = "DailySnapshotQuotaTableKey"
-	EligibleSlotSubmissionByDayKey = "EligibleSlotSubmissionByDayKey"
+	CurrentDayKey              = "CurrentDayKey"
+	DaySizeTableKey            = "DaySizeTableKey"
+	ProcessTriggerKey          = "TriggeredSequencerProcess"
+	EligibleSlotSubmissionsKey = "EligibleSlotSubmissionsKey"
+	DailySnapshotQuotaTableKey = "DailySnapshotQuotaTableKey"
+	EligibleNodeByDayKey       = "EligibleNodeByDayKey"
 )
