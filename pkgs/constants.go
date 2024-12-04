@@ -1,5 +1,7 @@
 package pkgs
 
+import "time"
+
 // Process Name Constants
 // process : identifier
 const (
@@ -15,10 +17,17 @@ const (
 
 // General Key Constants
 const (
-	CurrentDayKey              = "CurrentDayKey"
-	DaySizeTableKey            = "DaySizeTableKey"
-	ProcessTriggerKey          = "TriggeredSequencerProcess"
-	EligibleSlotSubmissionsKey = "EligibleSlotSubmissionsKey"
-	DailySnapshotQuotaTableKey = "DailySnapshotQuotaTableKey"
-	EligibleNodeByDayKey       = "EligibleNodeByDayKey"
+	CurrentDayKey                    = "CurrentDayKey"
+	DaySizeTableKey                  = "DaySizeTableKey"
+	ProcessTriggerKey                = "TriggeredSequencerProcess"
+	EligibleSlotSubmissionsKey       = "EligibleSlotSubmissionsKey"
+	DailySnapshotQuotaTableKey       = "DailySnapshotQuotaTableKey"
+	EligibleNodeByDayKey             = "EligibleNodeByDayKey"
+	EligibleSlotSubmissionByEpochKey = "EligibleSlotSubmissionByEpochKey"
+	DiscardedSubmissionKey           = "DiscardedSubmissionKey"
+)
+
+// General Constants
+const (
+	Day = 24 * time.Hour
 )
