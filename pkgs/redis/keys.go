@@ -26,8 +26,8 @@ func EligibleSlotSubmissionKey(dataMarketAddress string, slotID, currentDay stri
 	return fmt.Sprintf("%s.%s.%s.%s", pkgs.EligibleSlotSubmissionsKey, strings.ToLower(dataMarketAddress), currentDay, slotID)
 }
 
-func EligibleSlotSubmissionsByDayKey(dataMarketAddress, currentDay string) string {
-	return fmt.Sprintf("%s.%s.%s", pkgs.EligibleSlotSubmissionByDayKey, strings.ToLower(dataMarketAddress), currentDay)
+func EligibleNodesByDayKey(dataMarketAddress, currentDay string) string {
+	return fmt.Sprintf("%s.%s.%s", pkgs.EligibleNodeByDayKey, strings.ToLower(dataMarketAddress), currentDay)
 }
 
 func EligibleSlotSubmissionsByEpochKey(dataMarketAddress, currentDay, epochID string) string {

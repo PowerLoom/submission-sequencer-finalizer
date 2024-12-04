@@ -5,14 +5,14 @@ import "time"
 // Process Name Constants
 // process : identifier
 const (
-	FinalizeBatches                = "FinalizeBatches"
-	BuildMerkleTree                = "BuildMerkleTree"
-	BuildBatchSubmissions          = "BuildBatchSubmissions"
-	ArrangeKeysInBatches           = "ArrangeKeysInBatches"
-	SendSubmissionBatchSize        = "SendSubmissionBatchSize"
-	SendUpdateRewardsToRelayer     = "SendUpdateRewardsToRelayer"
-	SendSubmissionBatchToRelayer   = "SendSubmissionBatchToRelayer"
-	UpdateEligibleSubmissionCounts = "UpdateEligibleSubmissionCounts"
+	FinalizeBatches                = "SequencerFinalizer: FinalizeBatches"
+	BuildMerkleTree                = "SequencerFinalizer: BuildMerkleTree"
+	BuildBatchSubmissions          = "SequencerFinalizer: BuildBatchSubmissions"
+	ArrangeKeysInBatches           = "SequencerFinalizer: ArrangeKeysInBatches"
+	SendSubmissionBatchSize        = "SequencerFinalizer: SendSubmissionBatchSize"
+	SendUpdateRewardsToRelayer     = "SequencerFinalizer: SendUpdateRewardsToRelayer"
+	SendSubmissionBatchToRelayer   = "SequencerFinalizer: SendSubmissionBatchToRelayer"
+	UpdateEligibleSubmissionCounts = "SequencerFinalizer: UpdateEligibleSubmissionCounts"
 )
 
 // General Key Constants
