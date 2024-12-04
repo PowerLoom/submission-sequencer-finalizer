@@ -22,7 +22,7 @@ const (
 	ProcessTriggerKey                = "TriggeredSequencerProcess"
 	EligibleSlotSubmissionsKey       = "EligibleSlotSubmissionsKey"
 	DailySnapshotQuotaTableKey       = "DailySnapshotQuotaTableKey"
-	EligibleSlotSubmissionByDayKey   = "EligibleSlotSubmissionByDayKey"
+	EligibleNodeByDayKey             = "EligibleNodeByDayKey"
 	EligibleSlotSubmissionByEpochKey = "EligibleSlotSubmissionByEpochKey"
 	DiscardedSubmissionKey           = "DiscardedSubmissionKey"
 )
