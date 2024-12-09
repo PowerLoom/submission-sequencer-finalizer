@@ -2,6 +2,7 @@ package batcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"submission-sequencer-finalizer/pkgs"
@@ -12,11 +13,16 @@ import (
 	"submission-sequencer-finalizer/pkgs/redis"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/common"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+type DiscardedSubmissionDetails struct {
+	MostFrequentSnapshotCID  string
+	DiscardedSubmissionCount int
+	DiscardedSubmissions     map[string][]string // map of slotID -> all snapshotCID's that are invalid
+}
 
 func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 	// Initialize slices to store submission IDs and submission data
@@ -135,7 +141,7 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 			err,
 		)
 		clients.SendFailureNotification(pkgs.SendSubmissionBatchToRelayer, errorMsg, time.Now().String(), "High")
-		log.Errorf(errorMsg)
+		log.Error(errorMsg)
 		return nil, err
 	}
 
@@ -149,12 +155,21 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 	dataMarketAddress := s.DataMarketAddress
 	eligibleSubmissionCounts := make(map[string]int)
 
+	// Initialize map to track discarded submissions per project
+	discardedSubmissionsMap := make(map[string]*DiscardedSubmissionDetails)
+
 	// Process each submission in the batch by extracting slotID from submission keys
 	for projectID, submissionKeys := range batch {
 		mostFrequentCID, found := projectMostFrequentCID[projectID]
 		if !found {
 			log.Errorf("Most frequent CID missing for project %s in batch %d of epoch %s within data market %s", projectID, s.BatchID, s.EpochID.String(), s.DataMarketAddress)
 			continue
+		}
+
+		discardedDetails := &DiscardedSubmissionDetails{
+			MostFrequentSnapshotCID:  mostFrequentCID,
+			DiscardedSubmissionCount: 0,
+			DiscardedSubmissions:     make(map[string][]string),
 		}
 
 		// Iterate over the submission keys
@@ -166,20 +181,34 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 				continue
 			}
 
+			// Extract slotID from the submission key
+			parts := strings.Split(submissionKey, ".")
+			if len(parts) < 4 {
+				log.Errorf("Invalid submission key stored in redis: %s", submissionKey)
+				continue
+			}
+
+			slotID := parts[3]
+
+			// If the snapshotCID is not the most frequent one, mark it as discarded
+			if !exists || (found && snapshotCID != mostFrequentCID) {
+				// Increment the discarded submissions count
+				discardedDetails.DiscardedSubmissionCount++
+
+				// Add the snapshotCID to the discarded submissions map
+				discardedDetails.DiscardedSubmissions[slotID] = append(discardedDetails.DiscardedSubmissions[slotID], snapshotCID)
+			}
+
 			// Check if the snapshot CID matches the most frequent CID
 			if snapshotCID == mostFrequentCID {
-				// Extract slotID from the submission key
-				parts := strings.Split(submissionKey, ".")
-				if len(parts) < 4 {
-					log.Errorf("Invalid submission key stored in redis: %s", submissionKey)
-					continue
-				}
-
-				slotID := parts[3]
-
 				// Update the eligible submission count for the slotID
 				eligibleSubmissionCounts[slotID] += 1
 			}
+		}
+
+		// Store the discarded details for this project
+		if discardedDetails.DiscardedSubmissionCount > 0 {
+			discardedSubmissionsMap[projectID] = discardedDetails
 		}
 	}
 
@@ -190,6 +219,13 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		return err
 	}
 
+	if err := s.storeDiscardedSubmissionDetails(currentDay.String(), discardedSubmissionsMap); err != nil {
+		log.Errorf("Failed to store discarded submission details for epoch %s, data market %s: %v", s.EpochID.String(), dataMarketAddress, err)
+		return err
+	}
+
+	log.Debugf("✅ Successfully stored discarded submission details for epoch %s, data market %s in Redis", s.EpochID.String(), dataMarketAddress)
+
 	// Fetch daily snapshot quota for the specified data market address from Redis
 	dailySnapshotQuota, err := redis.GetDailySnapshotQuota(context.Background(), dataMarketAddress)
 	if err != nil {
@@ -199,62 +235,70 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 	// Update eligible submission counts in Redis for each slotID
 	for slotID, submissionCount := range eligibleSubmissionCounts {
-		// Set the eligible submission count in Redis
+		// Define Redis keys for the current slot and eligible nodes set
 		key := redis.EligibleSlotSubmissionKey(s.DataMarketAddress, slotID, currentDay.String())
-		updatedCount, err := redis.IncrBy(context.Background(), key, int64(submissionCount))
+		eligibleNodesKey := redis.EligibleNodesByDayKey(dataMarketAddress, currentDay.String())
+
+		expiry := 259200 // Expiry set to 3 days (in seconds)
+
+		// Execute the Lua script
+		result, err := redis.RedisClient.EvalSha(context.Background(), prost.LuaScriptHash, []string{key, eligibleNodesKey}, submissionCount, dailySnapshotQuota.Int64(), slotID, expiry).Result()
 		if err != nil {
-			log.Errorf("Failed to update eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID, dataMarketAddress, err)
+			log.Errorf("Failed to execute lua script for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
 			return err
+		}
+
+		// Convert the result to integer
+		updatedCount, ok := result.(int64)
+		if !ok {
+			log.Fatalf("Failed to convert lua script result to integer, got: %v", result)
 		}
 
 		log.Debugf("✅ Successfully updated eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %d", slotID, s.BatchID, s.EpochID, dataMarketAddress, updatedCount)
 
-		// If the eligible submission count for a slotID exceeds the daily snapshot quota, add the slotID to the eligible nodes set
-		if updatedCount >= dailySnapshotQuota.Int64() {
-			if err := redis.AddToSet(context.Background(), redis.EligibleNodesByDayKey(dataMarketAddress, currentDay.String()), slotID); err != nil {
-				log.Errorf("Failed to add slotID %s to eligible nodes set for data market %s on day %s: %v", slotID, dataMarketAddress, currentDay.String(), err)
-				continue
-			}
+		// Define the Redis key for storing the eligible submission count by epoch
+		eligibleSlotSubmissionByEpochKey := redis.EligibleSlotSubmissionsByEpochKey(s.DataMarketAddress, currentDay.String(), s.EpochID.String())
 
-			log.Infof("✅ Successfully added slotID %s to eligible nodes set for data market %s on day %s", slotID, dataMarketAddress, currentDay.String())
+		// Store the updated submission count for the given epoch in Redis hashtable
+		if err := redis.RedisClient.HSet(context.Background(), eligibleSlotSubmissionByEpochKey, slotID, updatedCount).Err(); err != nil {
+			log.Errorf("Failed to add eligible submission count for slotID %s to epoch %s hashtable for data market %s: %v", slotID, s.EpochID.String(), dataMarketAddress, err)
+			return err
+		}
+
+		log.Debugf("✅ Successfully added eligible submission count for slotID %s to epoch %s hashtable for data market %s: %d", slotID, s.EpochID.String(), dataMarketAddress, updatedCount)
+
+		// Set an expiry for storing the eligible submission counts by epoch
+		err = redis.Expire(context.Background(), eligibleSlotSubmissionByEpochKey, pkgs.Day*3)
+		if err != nil {
+			log.Errorf("Unable to set expiry for %s in Redis: %s", eligibleSlotSubmissionByEpochKey, err.Error())
+			return err
 		}
 	}
 
 	return nil
 }
 
-func (s *SubmissionDetails) sendSubmissionBatchToRelayer(finalizedBatchSubmission *ipfs.BatchSubmission) error {
-	// Define the operation that will be retried
-	operation := func() error {
-		// Attempt to submit the batch
-		err := clients.SubmitSubmissionBatch(
-			s.DataMarketAddress,
-			finalizedBatchSubmission.CID,
-			s.EpochID,
-			finalizedBatchSubmission.Batch.PIDs,
-			finalizedBatchSubmission.Batch.CIDs,
-			string(finalizedBatchSubmission.FinalizedCIDsRootHash),
-		)
+func (s *SubmissionDetails) storeDiscardedSubmissionDetails(currentDay string, discardedSubmissionsMap map[string]*DiscardedSubmissionDetails) error {
+	// Construct the Redis main key for discarded submission details
+	discardedKey := redis.DiscardedSubmissionsKey(s.DataMarketAddress, currentDay, s.EpochID.String())
+
+	// Write discarded submission details to Redis as a hashtable
+	for projectID, details := range discardedSubmissionsMap {
+		// Serialize the DiscardedSubmissionDetails struct
+		detailsJSON, err := json.Marshal(details)
 		if err != nil {
-			log.Errorf("Batch %d submission failed for epoch %s in data market %s: %v. Retrying...", s.BatchID, s.EpochID.String(), s.DataMarketAddress, err)
-			return err // Return error to trigger retry
+			return fmt.Errorf("failed to serialize discarded submission details for project %s: %v", projectID, err)
 		}
 
-		log.Infof("📤 Successfully submitted batch %d with CID %s to relayer for epoch %s in data market %s", s.BatchID, finalizedBatchSubmission.CID, s.EpochID.String(), s.DataMarketAddress)
-		return nil // Successful submission, no need for further retries
+		// Store the details in the Redis hashtable
+		if err := redis.RedisClient.HSet(context.Background(), discardedKey, projectID, detailsJSON).Err(); err != nil {
+			return fmt.Errorf("failed to write discarded submission details for project %s to Redis: %v", projectID, err)
+		}
 	}
 
-	// Customize the backoff configuration
-	backoffConfig := backoff.NewExponentialBackOff()
-	backoffConfig.InitialInterval = 1 * time.Second // Start with a 1-second delay
-	backoffConfig.Multiplier = 1.5                  // Increase interval by 1.5x after each retry
-	backoffConfig.MaxInterval = 4 * time.Second     // Set max interval between retries
-	backoffConfig.MaxElapsedTime = 10 * time.Second // Retry for a maximum of 10 seconds
-
-	// Limit retries to 3 times within 10 seconds
-	if err := backoff.Retry(operation, backoff.WithMaxRetries(backoffConfig, 3)); err != nil {
-		log.Errorf("Failed to submit batch %d submission with CID %s to relayer for epoch %s in data market %s after retries: %v", s.BatchID, finalizedBatchSubmission.CID, s.EpochID.String(), s.DataMarketAddress, err)
-		return err
+	// Set the expiry for the Redis key
+	if err := redis.RedisClient.Expire(context.Background(), discardedKey, pkgs.Day*3).Err(); err != nil {
+		return fmt.Errorf("failed to set expiry for key %s: %v", discardedKey, err)
 	}
 
 	return nil

@@ -22,9 +22,10 @@ import (
 )
 
 var (
-	Client       *ethclient.Client
-	Instance     *contract.Contract
-	epochsInADay = 720
+	Client        *ethclient.Client
+	Instance      *contract.Contract
+	epochsInADay  = 720
+	LuaScriptHash string
 )
 
 func ConfigureClient() {
@@ -57,6 +58,54 @@ func MustQuery[K any](ctx context.Context, call func() (val K, err error)) (K, e
 		return *new(K), err
 	}
 	return val, err
+}
+
+func LoadLuaScript() {
+	luaScript := `
+	-- Keys
+	local slotKey = KEYS[1]
+	local eligibleNodesKey = KEYS[2]
+
+	-- Arguments
+	local submissionCount = tonumber(ARGV[1])
+	local dailyQuota = tonumber(ARGV[2])
+	local slotID = ARGV[3]
+	local expiry = tonumber(ARGV[4]) 
+
+	-- Increment the submission count for the slot using INCRBY
+	local newCount = redis.call('INCRBY', slotKey, submissionCount)
+
+	-- Get current TTL of the slotKey
+	local keyTTL = redis.call('TTL', slotKey)
+
+	-- If the key does not exist or has no TTL, set the expiry to 3 days
+	if keyTTL == -2 then
+    	redis.call('EXPIRE', slotKey, expiry)
+	-- If the key has a TTL, reapply it to preserve existing expiry
+	elseif keyTTL ~= -1 then
+    	redis.call('EXPIRE', slotKey, keyTTL)
+	end
+
+	-- If the new count exceeds or equals the daily quota, add the slot to the eligible nodes set
+	if newCount >= dailyQuota then
+    	redis.call('SADD', eligibleNodesKey, slotID)
+
+    	-- Set the expiry for the eligibleNodesKey to 3 days
+    	redis.call('EXPIRE', eligibleNodesKey, expiry)
+	end
+
+	-- Return the new submission count
+	return newCount
+	`
+
+	// Load the Lua script into Redis and get its hash
+	hash, err := redis.RedisClient.ScriptLoad(context.Background(), luaScript).Result()
+	if err != nil {
+		log.Fatalf("Failed to load Lua script: %v", err)
+	}
+
+	// Store the hash
+	LuaScriptHash = hash
 }
 
 func LoadContractStateVariables() {

@@ -38,6 +38,9 @@ func main() {
 	// Load the state variables from the protocol state contract
 	prost.LoadContractStateVariables()
 
+	// Load the lua Script
+	prost.LoadLuaScript()
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
