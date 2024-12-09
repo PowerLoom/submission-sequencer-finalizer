@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/contract"
@@ -22,9 +23,10 @@ import (
 )
 
 var (
-	Client       *ethclient.Client
-	Instance     *contract.Contract
-	epochsInADay = 720
+	Client        *ethclient.Client
+	Instance      *contract.Contract
+	epochsInADay  = 720
+	LuaScriptHash string
 )
 
 func ConfigureClient() {
@@ -57,6 +59,28 @@ func MustQuery[K any](ctx context.Context, call func() (val K, err error)) (K, e
 		return *new(K), err
 	}
 	return val, err
+}
+
+func LoadLuaScript() {
+	// Load Lua script from file
+	scriptPath := "./scripts/submissionCount.lua"
+
+	luaScriptBytes, err := os.ReadFile(scriptPath)
+	if err != nil {
+		log.Fatalf("Failed to read Lua script file: %v", err)
+	}
+
+	// Store Lua script as a string
+	luaScript := string(luaScriptBytes)
+
+	// Load script into Redis and get its hash
+	hash, err := redis.RedisClient.ScriptLoad(context.Background(), luaScript).Result()
+	if err != nil {
+		log.Fatalf("Failed to load Lua script: %v", err)
+	}
+
+	// Store the hash
+	LuaScriptHash = hash
 }
 
 func LoadContractStateVariables() {
