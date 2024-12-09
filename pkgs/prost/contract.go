@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
-	"os"
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/contract"
@@ -62,18 +61,44 @@ func MustQuery[K any](ctx context.Context, call func() (val K, err error)) (K, e
 }
 
 func LoadLuaScript() {
-	// Load Lua script from file
-	scriptPath := "./scripts/submissionCount.lua"
+	luaScript := `
+	-- Keys
+	local slotKey = KEYS[1]
+	local eligibleNodesKey = KEYS[2]
 
-	luaScriptBytes, err := os.ReadFile(scriptPath)
-	if err != nil {
-		log.Fatalf("Failed to read Lua script file: %v", err)
-	}
+	-- Arguments
+	local submissionCount = tonumber(ARGV[1])
+	local dailyQuota = tonumber(ARGV[2])
+	local slotID = ARGV[3]
+	local expiry = tonumber(ARGV[4]) 
 
-	// Store Lua script as a string
-	luaScript := string(luaScriptBytes)
+	-- Increment the submission count for the slot using INCRBY
+	local newCount = redis.call('INCRBY', slotKey, submissionCount)
 
-	// Load script into Redis and get its hash
+	-- Get current TTL of the slotKey
+	local keyTTL = redis.call('TTL', slotKey)
+
+	-- If the key does not exist or has no TTL, set the expiry to 3 days
+	if keyTTL == -2 then
+    	redis.call('EXPIRE', slotKey, expiry)
+	-- If the key has a TTL, reapply it to preserve existing expiry
+	elseif keyTTL ~= -1 then
+    	redis.call('EXPIRE', slotKey, keyTTL)
+	end
+
+	-- If the new count exceeds or equals the daily quota, add the slot to the eligible nodes set
+	if newCount >= dailyQuota then
+    	redis.call('SADD', eligibleNodesKey, slotID)
+
+    	-- Set the expiry for the eligibleNodesKey to 3 days
+    	redis.call('EXPIRE', eligibleNodesKey, expiry)
+	end
+
+	-- Return the new submission count
+	return newCount
+	`
+
+	// Load the Lua script into Redis and get its hash
 	hash, err := redis.RedisClient.ScriptLoad(context.Background(), luaScript).Result()
 	if err != nil {
 		log.Fatalf("Failed to load Lua script: %v", err)
