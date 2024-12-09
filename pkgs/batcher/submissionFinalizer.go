@@ -235,17 +235,31 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 	// Update eligible submission counts in Redis for each slotID
 	for slotID, submissionCount := range eligibleSubmissionCounts {
-		// Set the eligible submission count in Redis
+		// Define Redis keys for the current slot and eligible nodes set
 		key := redis.EligibleSlotSubmissionKey(s.DataMarketAddress, slotID, currentDay.String())
-		updatedCount, err := redis.IncrBy(context.Background(), key, int64(submissionCount))
+		eligibleNodesKey := redis.EligibleNodesByDayKey(dataMarketAddress, currentDay.String())
+
+		expiry := 259200 // Expiry set to 3 days (in seconds)
+
+		// Execute the Lua script
+		result, err := redis.RedisClient.EvalSha(context.Background(), prost.LuaScriptHash, []string{key, eligibleNodesKey}, submissionCount, dailySnapshotQuota.Int64(), slotID, expiry).Result()
 		if err != nil {
-			log.Errorf("Failed to update eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
+			log.Errorf("Failed to execute lua script for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
 			return err
+		}
+
+		// Convert the result to integer
+		updatedCount, ok := result.(int64)
+		if !ok {
+			log.Fatalf("Failed to convert lua script result to integer, got: %v", result)
 		}
 
 		log.Debugf("✅ Successfully updated eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %d", slotID, s.BatchID, s.EpochID, dataMarketAddress, updatedCount)
 
+		// Define the Redis key for storing the eligible submission count by epoch
 		eligibleSlotSubmissionByEpochKey := redis.EligibleSlotSubmissionsByEpochKey(s.DataMarketAddress, currentDay.String(), s.EpochID.String())
+
+		// Store the updated submission count in Redis hash for the epoch
 		if err := redis.RedisClient.HSet(context.Background(), eligibleSlotSubmissionByEpochKey, slotID, updatedCount).Err(); err != nil {
 			log.Errorf("Failed to add eligible submission count for slotID %s to epoch %s hashtable for data market %s: %v", slotID, s.EpochID.String(), dataMarketAddress, err)
 			return err
@@ -253,14 +267,11 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 		log.Debugf("✅ Successfully added eligible submission count for slotID %s to epoch %s hashtable for data market %s: %d", slotID, s.EpochID.String(), dataMarketAddress, updatedCount)
 
-		// If the eligible submission count for a slotID exceeds the daily snapshot quota, add the slotID to the eligible nodes set
-		if updatedCount >= dailySnapshotQuota.Int64() {
-			if err := redis.AddToSet(context.Background(), redis.EligibleNodesByDayKey(dataMarketAddress, currentDay.String()), slotID); err != nil {
-				log.Errorf("Failed to add slotID %s to eligible nodes set for data market %s on day %s: %v", slotID, dataMarketAddress, currentDay.String(), err)
-				continue
-			}
-
-			log.Infof("✅ Successfully added slotID %s to eligible nodes set for data market %s on day %s", slotID, dataMarketAddress, currentDay.String())
+		// Set an expiry for storing the eligible submission counts by epoch
+		err = redis.Expire(context.Background(), eligibleSlotSubmissionByEpochKey, pkgs.Day*3)
+		if err != nil {
+			log.Errorf("Unable to set expiry for %s in Redis: %s", eligibleSlotSubmissionByEpochKey, err.Error())
+			return err
 		}
 	}
 
@@ -286,7 +297,7 @@ func (s *SubmissionDetails) storeDiscardedSubmissionDetails(currentDay string, d
 	}
 
 	// Set the expiry for the Redis key
-	if err := redis.RedisClient.Expire(context.Background(), discardedKey, pkgs.Day*7).Err(); err != nil {
+	if err := redis.RedisClient.Expire(context.Background(), discardedKey, pkgs.Day*3).Err(); err != nil {
 		return fmt.Errorf("failed to set expiry for key %s: %v", discardedKey, err)
 	}
 
