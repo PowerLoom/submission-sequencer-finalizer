@@ -40,11 +40,11 @@ The Finalizer is structured around three primary modules that collectively enabl
 
 This modular design ensures a well-defined separation of responsibilities, with each module focusing exclusively on a distinct aspect of the system's functionality. By organizing the system into clearly delineated modules, each component can operate independently while contributing to the overall system architecture.
 
-## Relayer Interaction
-The Finalizer component also interacts with the relayer to communicate critical updates, ensuring that all system components are synchronized and informed:
+## On-Chain updates via Relayer
+The Finalizer component leverages the relayer service to transmit essential updates to the Protocol State Contract, ensuring seamless synchronization across system components:
 
 ### Batch Processing Updates
-- **Batch Submission:** Transmits finalized IPFS batch submission for each batch associated with a specific data market and epoch combination to the relayer service.
+- **Batch Submission:** Sends finalized IPFS batch submission data for each batch, corresponding to a specific data market and epoch combination, to the relayer for on-chain publishing.
 
 ## Find us
 
