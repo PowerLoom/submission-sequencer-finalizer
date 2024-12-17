@@ -235,7 +235,7 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 	// Update eligible submission counts in Redis for each slotID
 	for slotID, submissionCount := range eligibleSubmissionCounts {
-		// Define Redis keys for the current slot and eligible nodes set
+		// Define Redis keys for updating eligible submission counts and storing eligible nodes for the current day
 		key := redis.EligibleSlotSubmissionKey(s.DataMarketAddress, slotID, currentDay.String())
 		eligibleNodesKey := redis.EligibleNodesByDayKey(dataMarketAddress, currentDay.String())
 
