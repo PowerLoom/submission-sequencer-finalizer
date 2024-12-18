@@ -2,7 +2,7 @@
 - [Table of Contents](#table-of-contents)
 - [Overview](#overview)
 - [Architecture](#architecture)
-- [Relayer Interaction](#relayer-interaction)
+- [On-Chain updates](#on-chain-updates-via-relayer)
 - [Find us](#find-us)
 
 ## Overview

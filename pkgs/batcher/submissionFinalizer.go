@@ -235,7 +235,7 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 	// Update eligible submission counts in Redis for each slotID
 	for slotID, submissionCount := range eligibleSubmissionCounts {
-		// Define Redis keys for updating eligible submission counts and storing eligible nodes for the current day
+		// Define Redis keys for eligible slot submission and set of eligible nodes for the day
 		key := redis.EligibleSlotSubmissionKey(s.DataMarketAddress, slotID, currentDay.String())
 		eligibleNodesKey := redis.EligibleNodesByDayKey(dataMarketAddress, currentDay.String())
 
@@ -244,6 +244,21 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		// Execute the Lua script
 		result, err := redis.RedisClient.EvalSha(context.Background(), prost.LuaScriptHash, []string{key, eligibleNodesKey}, submissionCount, dailySnapshotQuota.Int64(), slotID, expiry).Result()
 		if err != nil {
+			// Check if the error is due to NOSCRIPT
+			if strings.Contains(err.Error(), "NOSCRIPT") {
+				log.Warnf("Lua script not found (NOSCRIPT). Reloading Lua script...")
+
+				// Attempt to reload the Lua script
+				prost.LoadLuaScript()
+
+				// Retry executing the Lua script after reloading
+				_, err = redis.RedisClient.EvalSha(context.Background(), prost.LuaScriptHash, []string{key, eligibleNodesKey}, submissionCount, dailySnapshotQuota.Int64(), slotID, expiry).Result()
+				if err != nil {
+					log.Errorf("Failed to execute Lua script for slotID %s in batch %d, epoch %s within data market %s after reloading: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
+					return err
+				}
+			}
+
 			log.Errorf("Failed to execute lua script for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
 			return err
 		}
