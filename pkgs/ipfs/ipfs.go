@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"submission-sequencer-finalizer/config"
@@ -51,12 +52,12 @@ func ConnectIPFSNode() {
 	)
 }
 
-// StoreOnIPFS uploads a batch object to IPFS and returns the corresponding CID
+// StoreOnIPFS uploads a batch object to IPFS and returns the corresponding CID (in CIDv1 format)
 func StoreOnIPFS(ipfsClient *shell.Shell, batchData *Batch) (string, error) {
 	// Convert the batch data into JSON format
 	batchJSON, err := json.Marshal(batchData)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal batch data: %v", err)
 	}
 
 	var batchCID string
@@ -65,14 +66,20 @@ func StoreOnIPFS(ipfsClient *shell.Shell, batchData *Batch) (string, error) {
 	err = backoff.Retry(
 		func() error {
 			// Add the JSON data to IPFS and store the returned CID
-			batchCID, err = ipfsClient.Add(bytes.NewReader(batchJSON))
+			// Use v1 CID by specifying CID version
+			addOpts := []shell.AddOpts{shell.CidVersion(1)}
+			batchCID, err = ipfsClient.Add(bytes.NewReader(batchJSON), addOpts...)
+			if err != nil {
+				log.Errorf("failed to upload data to IPFS: %v", err)
+			}
+
 			return err
 		},
 		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), // Retry up to 3 times with exponential backoff
 	)
 
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to store data on IPFS after retries: %v", err)
 	}
 
 	return batchCID, nil
