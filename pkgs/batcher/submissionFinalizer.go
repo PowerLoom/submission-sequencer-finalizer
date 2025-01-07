@@ -162,7 +162,9 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 	for projectID, submissionKeys := range batch {
 		mostFrequentCID, found := projectMostFrequentCID[projectID]
 		if !found {
-			log.Errorf("Most frequent CID missing for project %s in batch %d of epoch %s within data market %s", projectID, s.BatchID, s.EpochID.String(), s.DataMarketAddress)
+			errMsg := fmt.Sprintf("Most frequent CID missing for project %s in batch %d of epoch %s within data market %s", projectID, s.BatchID, s.EpochID.String(), s.DataMarketAddress)
+			clients.SendFailureNotification(pkgs.UpdateEligibleSubmissionCounts, errMsg, time.Now().String(), "High")
+			log.Error(errMsg)
 			continue
 		}
 
@@ -254,19 +256,25 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 				// Retry executing the Lua script after reloading
 				_, err = redis.RedisClient.EvalSha(context.Background(), prost.LuaScriptHash, []string{key, eligibleNodesKey}, submissionCount, dailySnapshotQuota.Int64(), slotID, expiry).Result()
 				if err != nil {
-					log.Errorf("Failed to execute Lua script for slotID %s in batch %d, epoch %s within data market %s after reloading: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
+					errMsg := fmt.Sprintf("Failed to execute Lua script for slotID %s in batch %d, epoch %s within data market %s after reloading: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
+					clients.SendFailureNotification(pkgs.UpdateEligibleSubmissionCounts, errMsg, time.Now().String(), "High")
+					log.Error(errMsg)
 					return err
 				}
 			}
 
-			log.Errorf("Failed to execute lua script for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
+			errMsg := fmt.Sprintf("Failed to execute Lua script for slotID %s in batch %d, epoch %s within data market %s: %v", slotID, s.BatchID, s.EpochID.String(), dataMarketAddress, err)
+			clients.SendFailureNotification(pkgs.UpdateEligibleSubmissionCounts, errMsg, time.Now().String(), "High")
+			log.Error(errMsg)
 			return err
 		}
 
 		// Convert the result to integer
 		updatedCount, ok := result.(int64)
 		if !ok {
-			log.Fatalf("Failed to convert lua script result to integer, got: %v", result)
+			errMsg := fmt.Sprintf("Failed to convert lua script result to integer, got: %v", result)
+			clients.SendFailureNotification(pkgs.UpdateEligibleSubmissionCounts, errMsg, time.Now().String(), "High")
+			log.Error(errMsg)
 		}
 
 		log.Debugf("✅ Successfully updated eligible submission count for slotID %s in batch %d, epoch %s within data market %s: %d", slotID, s.BatchID, s.EpochID, dataMarketAddress, updatedCount)
@@ -283,8 +291,7 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		log.Debugf("✅ Successfully added eligible submission count for slotID %s to epoch %s hashtable for data market %s: %d", slotID, s.EpochID.String(), dataMarketAddress, updatedCount)
 
 		// Set an expiry for storing the eligible submission counts by epoch
-		err = redis.Expire(context.Background(), eligibleSlotSubmissionByEpochKey, pkgs.Day*3)
-		if err != nil {
+		if err := redis.Expire(context.Background(), eligibleSlotSubmissionByEpochKey, pkgs.Day*3); err != nil {
 			log.Errorf("Unable to set expiry for %s in Redis: %s", eligibleSlotSubmissionByEpochKey, err.Error())
 			return err
 		}
