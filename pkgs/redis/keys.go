@@ -18,6 +18,10 @@ func GetCurrentDayKey(dataMarketAddress string) string {
 	return fmt.Sprintf("%s.%s", pkgs.CurrentDayKey, strings.ToLower(dataMarketAddress))
 }
 
+func ContractStateVariableWithDataMarket(dataMarketAddress string, varName string) string {
+	return fmt.Sprintf("ProtocolState.%s.%s", dataMarketAddress, varName)
+}
+
 func TriggeredProcessLog(process, identifier string) string {
 	return fmt.Sprintf("%s.%s.%s", pkgs.ProcessTriggerKey, process, identifier)
 }
