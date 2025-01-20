@@ -24,6 +24,14 @@ type DiscardedSubmissionDetails struct {
 	DiscardedSubmissions     map[string][]string // map of slotID -> all snapshotCID's that are invalid
 }
 
+type DiscardedSubmissionByProjectDetails struct {
+	FinalizedCID               string
+	DiscardedSubmissionCount   int
+	DiscardedSubmissionDetails []string
+}
+
+type DiscardedSubmissionByProject map[string]*DiscardedSubmissionByProjectDetails
+
 func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 	// Initialize slices to store submission IDs and submission data
 	submissionIDs := []string{}
@@ -155,8 +163,9 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 	dataMarketAddress := s.DataMarketAddress
 	eligibleSubmissionCounts := make(map[string]int)
 
-	// Initialize map to track discarded submissions per project
-	discardedSubmissionsMap := make(map[string]*DiscardedSubmissionDetails)
+	// Initialize maps to track discarded submissions
+	discardedSubmissionsByEpochMap := make(map[string]*DiscardedSubmissionDetails)
+	discardedSubmissionsByDayMap := make(map[string]DiscardedSubmissionByProject)
 
 	// Process each submission in the batch by extracting slotID from submission keys
 	for projectID, submissionKeys := range batch {
@@ -197,6 +206,24 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 				// Add the snapshotCID to the discarded submissions map
 				discardedDetails.DiscardedSubmissions[slotID] = append(discardedDetails.DiscardedSubmissions[slotID], snapshotCID)
+
+				// Initialize the slotID map if not present
+				if _, ok := discardedSubmissionsByDayMap[slotID]; !ok {
+					discardedSubmissionsByDayMap[slotID] = make(DiscardedSubmissionByProject)
+				}
+
+				// Initialize the projectID map if not present
+				if _, ok := discardedSubmissionsByDayMap[slotID][projectID]; !ok {
+					discardedSubmissionsByDayMap[slotID][projectID] = &DiscardedSubmissionByProjectDetails{
+						FinalizedCID:               mostFrequentCID,
+						DiscardedSubmissionCount:   0,
+						DiscardedSubmissionDetails: make([]string, 0),
+					}
+				}
+
+				// Update the discarded submission details for the project
+				discardedSubmissionsByDayMap[slotID][projectID].DiscardedSubmissionCount++
+				discardedSubmissionsByDayMap[slotID][projectID].DiscardedSubmissionDetails = append(discardedSubmissionsByDayMap[slotID][projectID].DiscardedSubmissionDetails, snapshotCID)
 			}
 
 			// Check if the snapshot CID matches the most frequent CID
@@ -208,7 +235,7 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 
 		// Store the discarded details for this project
 		if discardedDetails.DiscardedSubmissionCount > 0 {
-			discardedSubmissionsMap[projectID] = discardedDetails
+			discardedSubmissionsByEpochMap[projectID] = discardedDetails
 		}
 	}
 
@@ -219,12 +246,19 @@ func (s *SubmissionDetails) UpdateEligibleSubmissionCounts(batch map[string][]st
 		return err
 	}
 
-	if err := s.storeDiscardedSubmissionDetails(currentDay.String(), discardedSubmissionsMap); err != nil {
+	if err := s.storeDiscardedSubmissionDetails(currentDay.String(), discardedSubmissionsByEpochMap); err != nil {
 		log.Errorf("Failed to store discarded submission details for epoch %s, data market %s: %v", s.EpochID.String(), dataMarketAddress, err)
 		return err
 	}
 
 	log.Debugf("✅ Successfully stored discarded submission details for epoch %s, data market %s in Redis", s.EpochID.String(), dataMarketAddress)
+
+	if err := s.storeDiscardedSubmissionByDayDetails(currentDay.String(), discardedSubmissionsByDayMap); err != nil {
+		log.Errorf("Failed to store discarded submission details for day %s, data market %s: %v", currentDay.String(), dataMarketAddress, err)
+		return err
+	}
+
+	log.Debugf("✅ Successfully stored discarded submission details for day %s, data market %s in Redis", currentDay.String(), dataMarketAddress)
 
 	// Fetch daily snapshot quota for the specified data market address from Redis
 	dailySnapshotQuota, err := redis.GetDailySnapshotQuota(context.Background(), dataMarketAddress)
@@ -308,6 +342,32 @@ func (s *SubmissionDetails) storeDiscardedSubmissionDetails(currentDay string, d
 		// Store the details in the Redis hashtable
 		if err := redis.RedisClient.HSet(context.Background(), discardedKey, projectID, detailsJSON).Err(); err != nil {
 			return fmt.Errorf("failed to write discarded submission details for project %s to Redis: %v", projectID, err)
+		}
+	}
+
+	// Set the expiry for the Redis key
+	if err := redis.RedisClient.Expire(context.Background(), discardedKey, pkgs.Day*3).Err(); err != nil {
+		return fmt.Errorf("failed to set expiry for key %s: %v", discardedKey, err)
+	}
+
+	return nil
+}
+
+func (s *SubmissionDetails) storeDiscardedSubmissionByDayDetails(currentDay string, discardedSubmissionsByDayMap map[string]DiscardedSubmissionByProject) error {
+	// Construct the Redis main key for discarded submission details
+	discardedKey := redis.DiscardedSubmissionsByDayKey(s.DataMarketAddress, currentDay)
+
+	// Write discarded submission details to Redis as a hashtable
+	for slotID, details := range discardedSubmissionsByDayMap {
+		// Serialize the DiscardedSubmissionByProject struct
+		detailsJSON, err := json.Marshal(details)
+		if err != nil {
+			return fmt.Errorf("failed to serialize discarded submission details for slotID %s: %v", slotID, err)
+		}
+
+		// Store the details in the Redis hashtable
+		if err := redis.RedisClient.HSet(context.Background(), discardedKey, slotID, detailsJSON).Err(); err != nil {
+			return fmt.Errorf("failed to write discarded submission details for slotID %s to Redis: %v", slotID, err)
 		}
 	}
 
