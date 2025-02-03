@@ -24,7 +24,6 @@ import (
 var (
 	Client        *ethclient.Client
 	Instance      *contract.Contract
-	epochsInADay  = 720
 	LuaScriptHash string
 )
 
@@ -141,7 +140,7 @@ func LoadContractStateVariables() {
 	}
 }
 
-func getExpirationTime(epochID, daySize int64) time.Time {
+func getExpirationTime(epochID, daySize, epochsInADay int64) time.Time {
 	// DAY_SIZE in microseconds
 	updatedDaySize := time.Duration(daySize) * time.Microsecond
 
@@ -149,7 +148,7 @@ func getExpirationTime(epochID, daySize int64) time.Time {
 	epochDuration := updatedDaySize / time.Duration(epochsInADay)
 
 	// Calculate the number of epochs left for the day
-	remainingEpochs := epochID % int64(epochsInADay)
+	remainingEpochs := epochID % epochsInADay
 
 	// Calculate the expiration duration
 	expirationDuration := epochDuration * time.Duration(remainingEpochs)
@@ -193,8 +192,15 @@ func FetchCurrentDay(dataMarketAddress common.Address, epochID int64) (*big.Int,
 		return nil, err
 	}
 
+	// Fetch epochs in a day for the specified data market address from Redis
+	epochsInADay, err := redis.GetEpochsInADay(context.Background(), dataMarketAddress.Hex())
+	if err != nil {
+		log.Errorf("Failed to fetch epochs in a day for data market %s: %v", dataMarketAddress, err)
+		return nil, err
+	}
+
 	// Calculate expiration time
-	expirationTime := getExpirationTime(epochID, daySize.Int64())
+	expirationTime := getExpirationTime(epochID, daySize.Int64(), epochsInADay.Int64())
 
 	// Set the current day in Redis with the calculated expiration duration
 	if err := redis.SetWithExpiration(context.Background(), redis.GetCurrentDayKey(dataMarketAddress.Hex()), currentDay.String(), time.Until(expirationTime)); err != nil {

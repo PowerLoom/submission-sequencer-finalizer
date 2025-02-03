@@ -17,6 +17,7 @@ const (
 
 // General Key Constants
 const (
+	EpochsInADay                     = "EpochsInADay"
 	CurrentDayKey                    = "CurrentDayKey"
 	DaySizeTableKey                  = "DaySizeTableKey"
 	ProcessTriggerKey                = "TriggeredSequencerProcess"
