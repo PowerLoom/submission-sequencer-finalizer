@@ -1,6 +1,7 @@
 module submission-sequencer-finalizer
 
 go 1.23
+toolchain go1.24.1
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
@@ -57,7 +58,7 @@ require (
 	github.com/supranational/blst v0.3.13 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
-	golang.org/x/crypto v0.27.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	lukechampine.com/blake3 v1.3.0 // indirect
@@ -67,5 +68,5 @@ require (
 require (
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/go-redis/redis/v8 v8.11.5
-	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 )
