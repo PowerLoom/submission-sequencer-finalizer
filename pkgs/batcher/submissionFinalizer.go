@@ -63,7 +63,7 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 			}
 
 			// Split the submission value into ID and submission data parts
-			submissionDataParts := strings.Split(submissionValue, ".")
+			submissionDataParts := strings.SplitN(submissionValue, ".", 2)
 
 			// Parse the submission data using the SnapshotSubmission structure
 			submissionDetails := pkgs.SnapshotSubmission{}
