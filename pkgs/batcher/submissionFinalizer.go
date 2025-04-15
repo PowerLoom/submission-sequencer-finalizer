@@ -64,10 +64,6 @@ func (s *SubmissionDetails) FinalizeBatch() (*ipfs.BatchSubmission, error) {
 
 			// Split the submission value into ID and submission data parts
 			submissionDataParts := strings.Split(submissionValue, ".")
-			if len(submissionDataParts) != 2 {
-				log.Errorln("Invalid format for submission value: ", submissionValue)
-				continue
-			}
 
 			// Parse the submission data using the SnapshotSubmission structure
 			submissionDetails := pkgs.SnapshotSubmission{}
