@@ -2,10 +2,8 @@ package prost
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"math/big"
-	"net/http"
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/contract"
@@ -15,30 +13,63 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
+	rpchelper "github.com/powerloom/rpc-helper"
 
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	Client        *ethclient.Client
-	Instance      *contract.Contract
+	RPCHelper *rpchelper.RPCHelper
+	Instance  *contract.Contract
+
 	LuaScriptHash string
 )
 
-func ConfigureClient() {
-	rpcClient, err := rpc.DialOptions(context.Background(), config.SettingsObj.ClientUrl, rpc.WithHTTPClient(&http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}))
-	if err != nil {
-		log.Errorf("Failed to connect to client: %s", err)
-		log.Fatal(err)
+func ConfigureClient(ctx context.Context) error {
+	// Create RPC helper configuration
+	rpcConfig := &rpchelper.RPCConfig{
+		Nodes:          make([]rpchelper.NodeConfig, 0),
+		ArchiveNodes:   make([]rpchelper.NodeConfig, 0),
+		MaxRetries:     config.SettingsObj.RPCMaxRetries,
+		RetryDelay:     time.Duration(config.SettingsObj.RPCRetryDelayMs) * time.Millisecond,
+		MaxRetryDelay:  time.Duration(config.SettingsObj.RPCMaxRetryDelayMs) * time.Millisecond,
+		RequestTimeout: time.Duration(config.SettingsObj.RPCRequestTimeoutMs) * time.Millisecond,
 	}
 
-	Client = ethclient.NewClient(rpcClient)
+	// Add regular RPC nodes
+	for _, nodeURL := range config.SettingsObj.RPCNodes {
+		rpcConfig.Nodes = append(rpcConfig.Nodes, rpchelper.NodeConfig{URL: nodeURL})
+	}
+
+	// Add archive RPC nodes if any
+	for _, nodeURL := range config.SettingsObj.ArchiveRPCNodes {
+		rpcConfig.ArchiveNodes = append(rpcConfig.ArchiveNodes, rpchelper.NodeConfig{URL: nodeURL})
+	}
+
+	// Create and initialize RPC helper
+	RPCHelper = rpchelper.NewRPCHelper(rpcConfig)
+	if err := RPCHelper.Initialize(ctx); err != nil {
+		log.Errorf("Failed to initialize RPC helper: %s", err)
+		return err
+	}
+
+	log.Infof("Successfully initialized RPC helper with %d nodes and %d archive nodes",
+		len(config.SettingsObj.RPCNodes), len(config.SettingsObj.ArchiveRPCNodes))
+	return nil
 }
 
-func ConfigureContractInstance() {
-	Instance, _ = contract.NewContract(common.HexToAddress(config.SettingsObj.ContractAddress), Client)
+func ConfigureContractInstance() error {
+	var err error
+
+	// Create contract backend from RPC helper
+	contractBackend := RPCHelper.NewContractBackend()
+
+	Instance, err = contract.NewContract(common.HexToAddress(config.SettingsObj.ContractAddress), contractBackend)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func MustQuery[K any](ctx context.Context, call func() (val K, err error)) (K, error) {
