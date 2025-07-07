@@ -27,6 +27,10 @@ type Settings struct {
 	DataMarketAddresses         []string
 	DataMarketContractAddresses []common.Address
 	ProcessSwitch               bool
+	EigenDAHostname             string
+	EigenDAPort                 string
+	EigenDAPrivateKey           string
+	Uploader                    string
 }
 
 func LoadConfig() {
@@ -58,6 +62,10 @@ func LoadConfig() {
 		TxRelayerAuthWriteToken: getEnv("TX_RELAYER_AUTH_WRITE_TOKEN", ""),
 		DataMarketAddresses:     dataMarketAddressesList,
 		ProcessSwitch:           processSwitch,
+		EigenDAHostname:         getEnv("EIGENDA_HOSTNAME", ""),
+		EigenDAPort:             getEnv("EIGENDA_PORT", ""),
+		EigenDAPrivateKey:       getEnv("EIGENDA_PRIVATE_KEY", ""),
+		Uploader:                getEnv("UPLOADER", "ipfs"),
 	}
 
 	for _, addr := range config.DataMarketAddresses {

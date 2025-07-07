@@ -4,12 +4,15 @@ import (
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs/batcher"
 	"submission-sequencer-finalizer/pkgs/clients"
+	"submission-sequencer-finalizer/pkgs/eigenda"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/prost"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"submission-sequencer-finalizer/pkgs/utils"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -28,8 +31,15 @@ func main() {
 	// Setup redis
 	redis.RedisClient = redis.NewRedisClient()
 
-	// Connect to IPFS node
-	ipfs.ConnectIPFSNode()
+	// Connect to IPFS or EigenDA
+	if config.SettingsObj.Uploader == "eigenda" {
+		err := eigenda.ConnectEigenDA()
+		if err != nil {
+			log.Fatalf("Failed to connect to EigenDA: %v", err)
+		}
+	} else {
+		ipfs.ConnectIPFSNode()
+	}
 
 	// Set up RPC client and contract instance
 	prost.ConfigureClient()

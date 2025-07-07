@@ -2,10 +2,13 @@ package merkle
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs"
 	"submission-sequencer-finalizer/pkgs/clients"
+	"submission-sequencer-finalizer/pkgs/eigenda"
 	"submission-sequencer-finalizer/pkgs/ipfs"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"time"
@@ -15,7 +18,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// BuildMerkleTree constructs Merkle trees for both submission IDs and finalized CIDs, stores the batch on IPFS, and logs the process
+// BuildMerkleTree constructs Merkle trees for both submission IDs and finalized CIDs, stores the batch on IPFS or EigenDA, and logs the process
 func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, projectIDs, CIDs []string, dataMarketAddress string, batchID int) (*ipfs.BatchSubmission, error) {
 	// Create a new Merkle tree for submission IDs
 	submissionIDMerkleTree, err := imt.New()
@@ -40,7 +43,7 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 	submissionIDRootHash := GetRootHash(submissionIDMerkleTree)
 	log.Infof("🔍 SubmissionIDs merkle tree root hash for batch %d in epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, submissionIDRootHash)
 
-	// Create a new batch and store it in IPFS
+	// Create a new batch
 	batchData := &ipfs.Batch{
 		SubmissionIDs: submissionIDs,
 		Submissions:   submissionData,
@@ -49,16 +52,35 @@ func BuildMerkleTree(submissionIDs, submissionData []string, epochID *big.Int, p
 		CIDs:          CIDs,
 	}
 
-	// Store the batch in IPFS and get the corresponding CID
-	batchCID, err := ipfs.StoreOnIPFS(ipfs.IPFSClient, batchData)
-	if err != nil {
-		errorMsg := fmt.Sprintf("Error storing batch %d data on IPFS for epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, err.Error())
-		clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
-		log.Error(errorMsg)
-		return nil, err
-	}
+	var batchCID string
+	if config.SettingsObj.Uploader == "eigenda" {
+		// Store the batch in EigenDA and get the corresponding CID
+		batchDataBytes, err := json.Marshal(batchData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal batch data: %v", err)
+		}
 
-	log.Infof("📦 Batch %d data stored on IPFS with CID %s for epoch %s within data market %s", batchID, batchCID, epochID.String(), dataMarketAddress)
+		batchCID, err = eigenda.StoreOnEigenDA(batchDataBytes)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Error storing batch %d data on EigenDA for epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, err.Error())
+			clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+			log.Error(errorMsg)
+			return nil, err
+		}
+
+		log.Infof("📦 Batch %d data stored on EigenDA with CID %s for epoch %s within data market %s", batchID, batchCID, epochID.String(), dataMarketAddress)
+	} else {
+		// Store the batch in IPFS and get the corresponding CID
+		batchCID, err = ipfs.StoreOnIPFS(ipfs.IPFSClient, batchData)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Error storing batch %d data on IPFS for epoch %s within data market %s: %s", batchID, epochID.String(), dataMarketAddress, err.Error())
+			clients.SendFailureNotification(pkgs.BuildMerkleTree, errorMsg, time.Now().String(), "High")
+			log.Error(errorMsg)
+			return nil, err
+		}
+
+		log.Infof("📦 Batch %d data stored on IPFS with CID %s for epoch %s within data market %s", batchID, batchCID, epochID.String(), dataMarketAddress)
+	}
 
 	// Log the batch processing success
 	processLogEntry := map[string]interface{}{
