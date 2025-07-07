@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	rpchelper "github.com/powerloom/rpc-helper"
-	"github.com/powerloom/rpc-helper/reporting"
+	rpchelper "github.com/powerloom/go-rpc-helper"
+	"github.com/powerloom/go-rpc-helper/reporting"
 
 	"github.com/ethereum/go-ethereum/common"
 )
