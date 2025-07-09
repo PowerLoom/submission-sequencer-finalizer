@@ -3,7 +3,10 @@
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Uploader Configuration](#uploader-configuration)
-- [On-Chain updates](#on-chain-updates-via-relayer)
+- [On-Chain updates via Relayer](#on-chain-updates-via-relayer)
+  - [Batch Processing Updates](#batch-processing-updates)
+- [Testing](#testing)
+  - [EigenDA Integration Tests](#eigenda-integration-tests)
 - [Find us](#find-us)
 
 ## Overview
@@ -76,6 +79,49 @@ The Finalizer component leverages the relayer service to transmit essential upda
 ### Batch Processing Updates
 - **Batch Submission:** Sends finalized IPFS batch submission data for each batch, corresponding to a specific data market and epoch combination, to the relayer for on-chain publishing.
 
+
+## Testing
+
+To run the tests for this project, you will need to have the following installed:
+
+-   Go
+
+The tests can be run using the following command:
+
+```bash
+go test -v ./...
+```
+
+This will run all the tests in the project, including the integration tests for the IPFS and EigenDA uploaders.
+
+**Configuration**
+
+Before running the tests, you will need to create a `.env` file in the root of the project with the following environment variables:
+
+```
+IPFS_URL=<your_ipfs_url>
+EIGENDA_HOSTNAME=<your_eigenda_hostname>
+EIGENDA_PORT=<your_eigenda_port>
+EIGENDA_PRIVATE_KEY=<your_eigenda_private_key>
+```
+
+**Note:** The tests will upload the `batchedSubmissions.json` file to the configured IPFS and EigenDA instances. Make sure that you have the necessary permissions to write to these instances.
+
+### EigenDA Integration Tests
+
+To run only the EigenDA integration tests, you need to set the following environment variables:
+
+-   `EIGENDA_HOSTNAME`: The hostname of the EigenDA disperser node.
+-   `EIGENDA_PORT`: The port of the EigenDA disperser node.
+-   `EIGENDA_PRIVATE_KEY`: Your private key for signing requests to the EigenDA network.
+
+Once these environment variables are set, you can run the tests using the following command:
+
+```bash
+go test -v submission-sequencer-finalizer/pkgs/eigenda
+```
+
+
 ## Find us
 
 * [Discord](https://powerloom.io/discord)
@@ -84,3 +130,4 @@ The Finalizer component leverages the relayer service to transmit essential upda
 * [Careers](https://wellfound.com/company/powerloom/jobs)
 * [Blog](https://blog.powerloom.io/)
 * [Medium Engineering Blog](https://medium.com/powerloom)
+

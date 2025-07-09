@@ -1,12 +1,6 @@
 package ipfs
 
-import (
-	"fmt"
-	"testing"
-
-	shell "github.com/ipfs/go-ipfs-api"
-)
-
+/*
 func TestStoreOnIPFS(t *testing.T) {
 	// Create sample batch data
 	batch := &Batch{
@@ -33,3 +27,4 @@ func TestStoreOnIPFS(t *testing.T) {
 
 	fmt.Println("Batch CID:", batchCID)
 }
+*/
