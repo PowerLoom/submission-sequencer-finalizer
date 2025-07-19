@@ -8,7 +8,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/ipfs/go-ipfs-api v0.7.0
-	github.com/powerloom/go-rpc-helper v1.0.3
+	github.com/powerloom/go-rpc-helper v1.0.4
 	github.com/sergerad/incremental-merkle-tree v0.0.0-20230715063941-db79af0c6c68
 	github.com/sirupsen/logrus v1.9.3
 	google.golang.org/protobuf v1.34.2
@@ -20,6 +20,7 @@ require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/bits-and-blooms/bitset v1.13.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
+	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/consensys/bavard v0.1.13 // indirect
 	github.com/consensys/gnark-crypto v0.12.1 // indirect
@@ -67,7 +68,7 @@ require (
 )
 
 require (
-	github.com/ethereum/go-ethereum v1.14.13
+	github.com/ethereum/go-ethereum v1.14.11
 	github.com/go-redis/redis/v8 v8.11.5
 	golang.org/x/sys v0.30.0 // indirect
 )
