@@ -8,7 +8,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/ipfs/go-ipfs-api v0.7.0
-	github.com/powerloom/go-rpc-helper v1.0.5-0.20250731174712-575c7f4bc102
+	github.com/powerloom/go-rpc-helper v1.0.5-0.20250731182038-925d3a9856fd
 	github.com/sergerad/incremental-merkle-tree v0.0.0-20230715063941-db79af0c6c68
 	github.com/sirupsen/logrus v1.9.3
 	google.golang.org/protobuf v1.34.2
