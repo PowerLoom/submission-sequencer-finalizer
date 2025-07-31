@@ -2,61 +2,62 @@ package prost
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"math/big"
-	"net/http"
 	"submission-sequencer-finalizer/config"
-	"submission-sequencer-finalizer/pkgs/clients"
 	"submission-sequencer-finalizer/pkgs/contract"
 	"submission-sequencer-finalizer/pkgs/redis"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
+	rpchelper "github.com/powerloom/go-rpc-helper"
 
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	Client        *ethclient.Client
-	Instance      *contract.Contract
+	RPCHelper *rpchelper.RPCHelper
+	Instance  *contract.Contract
+
 	LuaScriptHash string
 )
 
-func ConfigureClient() {
-	rpcClient, err := rpc.DialOptions(context.Background(), config.SettingsObj.ClientUrl, rpc.WithHTTPClient(&http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}))
-	if err != nil {
-		log.Errorf("Failed to connect to client: %s", err)
-		log.Fatal(err)
-	}
+func ConfigureClient(ctx context.Context) error {
+	// Create RPC helper configuration using the ToRPCConfig method
+	rpcConfig := config.SettingsObj.ToRPCConfig()
 
-	Client = ethclient.NewClient(rpcClient)
-}
+	// Create and initialize RPC helper
+	RPCHelper = rpchelper.NewRPCHelper(rpcConfig)
+	if err := RPCHelper.Initialize(ctx); err != nil {
+		log.Errorf("Failed to initialize RPC helper: %s", err)
 
-func ConfigureContractInstance() {
-	Instance, _ = contract.NewContract(common.HexToAddress(config.SettingsObj.ContractAddress), Client)
-}
+		// Give the alert processor time to send webhooks before terminating
+		if rpcConfig.WebhookConfig != nil {
+			log.Info("Waiting for alert notifications to be sent...")
+			time.Sleep(5 * time.Second)
+		}
 
-func MustQuery[K any](ctx context.Context, call func() (val K, err error)) (K, error) {
-	expBackOff := backoff.NewConstantBackOff(1 * time.Second)
-
-	var val K
-	operation := func() error {
-		var err error
-		val, err = call()
 		return err
 	}
-	// Use the retry package to execute the operation with backoff
-	err := backoff.Retry(operation, backoff.WithMaxRetries(expBackOff, 3))
+
+	log.Infof("Successfully initialized RPC helper with %d nodes and %d archive nodes",
+		len(config.SettingsObj.RPCNodes), len(config.SettingsObj.ArchiveNodes))
+	return nil
+}
+
+func ConfigureContractInstance() error {
+	var err error
+
+	// Create contract backend from RPC helper
+	contractBackend := RPCHelper.NewContractBackend()
+
+	Instance, err = contract.NewContract(common.HexToAddress(config.SettingsObj.ContractAddress), contractBackend)
 	if err != nil {
-		clients.SendFailureNotification("Contract query error [MustQuery]", err.Error(), time.Now().String(), "High")
-		return *new(K), err
+		return err
 	}
-	return val, err
+
+	return nil
 }
 
 func LoadLuaScript() {
@@ -111,9 +112,7 @@ func LoadContractStateVariables() {
 	// Iterate over each data market contract address in the config
 	for _, dataMarketAddress := range config.SettingsObj.DataMarketContractAddresses {
 		// Fetch the day size for the specified data market address from contract
-		if output, err := MustQuery(context.Background(), func() (*big.Int, error) {
-			return Instance.DAYSIZE(&bind.CallOpts{}, dataMarketAddress)
-		}); err == nil {
+		if output, err := Instance.DAYSIZE(&bind.CallOpts{}, dataMarketAddress); err == nil {
 			// Convert the day size to a string for storage in Redis
 			daySize := output.String()
 
@@ -122,12 +121,12 @@ func LoadContractStateVariables() {
 			if err != nil {
 				log.Errorf("Failed to set day size for data market %s in Redis: %v", dataMarketAddress.Hex(), err)
 			}
+		} else {
+			log.Errorf("Failed to fetch day size for data market %s: %v", dataMarketAddress.Hex(), err)
 		}
 
 		// Fetch the daily snapshot quota for the specified data market address from contract
-		if output, err := MustQuery(context.Background(), func() (*big.Int, error) {
-			return Instance.DailySnapshotQuota(&bind.CallOpts{}, dataMarketAddress)
-		}); err == nil {
+		if output, err := Instance.DailySnapshotQuota(&bind.CallOpts{}, dataMarketAddress); err == nil {
 			// Convert the daily snapshot quota to a string for storage in Redis
 			dailySnapshotQuota := output.String()
 
@@ -136,6 +135,8 @@ func LoadContractStateVariables() {
 			if err != nil {
 				log.Errorf("Failed to set daily snapshot quota for data market %s in Redis: %v", dataMarketAddress.Hex(), err)
 			}
+		} else {
+			log.Errorf("Failed to fetch daily snapshot quota for data market %s: %v", dataMarketAddress.Hex(), err)
 		}
 	}
 }
@@ -178,11 +179,10 @@ func FetchCurrentDay(dataMarketAddress common.Address, epochID int64) (*big.Int,
 	}
 
 	// Cache miss: fetch the current day for the specified data market address from contract
-	var currentDay *big.Int
-	if output, err := MustQuery(context.Background(), func() (*big.Int, error) {
-		return Instance.DayCounter(&bind.CallOpts{}, dataMarketAddress)
-	}); err == nil {
-		currentDay = output
+	currentDay, err := Instance.DayCounter(&bind.CallOpts{}, dataMarketAddress)
+	if err != nil {
+		log.Errorf("Failed to fetch current day from contract for data market %s: %v", dataMarketAddress.Hex(), err)
+		return nil, err
 	}
 
 	// Fetch day size for the specified data market address from Redis

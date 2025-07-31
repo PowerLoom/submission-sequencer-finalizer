@@ -1,11 +1,14 @@
 module submission-sequencer-finalizer
 
-go 1.23
+go 1.23.0
+
+toolchain go1.23.4
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/ipfs/go-ipfs-api v0.7.0
+	github.com/powerloom/go-rpc-helper v1.0.5-0.20250726065922-28883c22bd97
 	github.com/sergerad/incremental-merkle-tree v0.0.0-20230715063941-db79af0c6c68
 	github.com/sirupsen/logrus v1.9.3
 	google.golang.org/protobuf v1.34.2
@@ -57,7 +60,7 @@ require (
 	github.com/supranational/blst v0.3.13 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
-	golang.org/x/crypto v0.27.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	lukechampine.com/blake3 v1.3.0 // indirect
@@ -67,5 +70,5 @@ require (
 require (
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/go-redis/redis/v8 v8.11.5
-	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 )

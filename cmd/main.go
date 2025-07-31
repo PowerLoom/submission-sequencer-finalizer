@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"submission-sequencer-finalizer/config"
 	"submission-sequencer-finalizer/pkgs/batcher"
 	"submission-sequencer-finalizer/pkgs/clients"
@@ -31,19 +32,39 @@ func main() {
 	// Connect to IPFS node
 	ipfs.ConnectIPFSNode()
 
-	// Set up RPC client and contract instance
-	prost.ConfigureClient()
-	prost.ConfigureContractInstance()
+	// Setup blockchain client
+	ctx := context.Background()
+	if err := prost.ConfigureClient(ctx); err != nil {
+		panic(err)
+	}
 
-	// Load the state variables from the protocol state contract
+	// Add cleanup for RPC helper
+	defer func() {
+		if prost.RPCHelper != nil {
+			prost.RPCHelper.Close()
+		}
+	}()
+
+	// Setup contract instance
+	if err := prost.ConfigureContractInstance(); err != nil {
+		panic(err)
+	}
+
+	// Load contract state variables
 	prost.LoadContractStateVariables()
 
-	// Load the lua Script
+	// Load lua script
 	prost.LoadLuaScript()
 
 	var wg sync.WaitGroup
 
+	// Start the submission processor
 	wg.Add(1)
-	go batcher.StartSubmissionProcessor() // Start the submission processor
+	go func() {
+		defer wg.Done()
+		batcher.StartSubmissionProcessor()
+	}()
+
+	// Wait for all goroutines to complete
 	wg.Wait()
 }
